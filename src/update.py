@@ -5,12 +5,11 @@
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
-
+from torch.nn.utils import clip_grad_norm_
 
 class DatasetSplit(Dataset):
     """An abstract Dataset class wrapped around Pytorch Dataset class.
     """
-
     def __init__(self, dataset, idxs):
         self.dataset = dataset
         self.idxs = [int(i) for i in idxs]
@@ -83,6 +82,68 @@ class LocalUpdate(object):
                 self.logger.add_scalar('loss', loss.item())
                 batch_loss.append(loss.item())
             epoch_loss.append(sum(batch_loss)/len(batch_loss))
+
+        return model.state_dict(), sum(epoch_loss) / len(epoch_loss)
+
+    def dp_sgd(self, model, global_round, clipping_norm, noise_mag):
+        #################
+        ## ALGORITHM 1 ##
+        #################
+
+        # Set mode to train model
+        model.train()
+        epoch_loss = []
+
+        # Set optimizer for the local updates
+        if self.args.optimizer == 'sgd':
+            optimizer = torch.optim.SGD(model.parameters(), lr=self.args.lr,
+                                        momentum=0.5)
+        elif self.args.optimizer == 'adam':
+            optimizer = torch.optim.Adam(model.parameters(), lr=self.args.lr,
+                                         weight_decay=1e-4)
+        # for each epoch...
+        for iter in range(self.args.local_ep):
+            batch_loss = []
+
+            # for batch data...
+            for batch_idx, (images, labels) in enumerate(self.trainloader):
+                images, labels = images.to(self.device), labels.to(self.device)
+
+                # Compute gradients (g_i)
+                model.zero_grad()
+                log_probs = model(images)
+                loss = self.criterion(log_probs, labels)
+                loss.backward()
+
+            # clip, average, and perturb gradients
+            for param in model.parameters():
+                per_sample_grad = param.grad.detach().clone()
+                clip_grad_norm_(per_sample_grad, max_norm=clipping_norm)
+                param.accumulated_grads.append(per_sample_grad)
+
+            # Aggregate gradients (Temp)
+            for param in model.parameters():
+                param.grad = torch.stack(param.accumulated_grads, dim=0)
+
+            # Add noise
+            for param in model.parameters():
+                param += torch.normal(mean=0, std=noise_mag * max_grad_norm)
+
+            # theta_{i+1}
+            optimizer.step()
+
+
+            if self.args.verbose and (batch_idx % 10 == 0):
+                print('| Global Round : {} | Local Epoch : {} | [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                    global_round, iter, batch_idx * len(images),
+                    len(self.trainloader.dataset),
+                    100. * batch_idx / len(self.trainloader), loss.item()))
+            self.logger.add_scalar('loss', loss.item())
+            batch_loss.append(loss.item())
+            # go to next epoch....
+
+        epoch_loss.append(sum(batch_loss)/len(batch_loss))
+
 
         return model.state_dict(), sum(epoch_loss) / len(epoch_loss)
 
