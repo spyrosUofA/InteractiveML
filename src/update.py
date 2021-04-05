@@ -30,7 +30,7 @@ class LocalUpdate(object):
             dataset, list(idxs))
         self.device = 'cuda' if args.gpu else 'cpu'
         # Default criterion set to NLL loss function
-        self.criterion = nn.NLLLoss().to(self.device)
+        self.criterion = nn.NLLLoss(reduction='none').to(self.device)
 
     def train_val_test(self, dataset, idxs):
         """
@@ -43,7 +43,7 @@ class LocalUpdate(object):
         idxs_test = idxs[int(0.9*len(idxs)):]
 
         trainloader = DataLoader(DatasetSplit(dataset, idxs_train),
-                                 batch_size=self.args.local_bs, shuffle=True)
+                                 batch_size=1, shuffle=True) #self.args.local_bs
         validloader = DataLoader(DatasetSplit(dataset, idxs_val),
                                  batch_size=int(len(idxs_val)/10), shuffle=False)
         testloader = DataLoader(DatasetSplit(dataset, idxs_test),
@@ -85,7 +85,7 @@ class LocalUpdate(object):
 
         return model.state_dict(), sum(epoch_loss) / len(epoch_loss)
 
-    def dp_sgd(self, model, global_round, clipping_norm, noise_mag):
+    def dp_sgd(self, model, global_round, clipping_norm=1, noise_mag=1.0):
         #################
         ## ALGORITHM 1 ##
         #################
@@ -101,49 +101,249 @@ class LocalUpdate(object):
         elif self.args.optimizer == 'adam':
             optimizer = torch.optim.Adam(model.parameters(), lr=self.args.lr,
                                          weight_decay=1e-4)
-        # for each epoch...
+        # for each epoch (1...E)
         for iter in range(self.args.local_ep):
             batch_loss = []
 
-            # for batch data...
+            # batch data (x,y) (1...m)
             for batch_idx, (images, labels) in enumerate(self.trainloader):
+
                 images, labels = images.to(self.device), labels.to(self.device)
 
-                # Compute gradients (g_i)
+                print(labels)
+                print(labels[[[0]]])
+
+                print(labels.shape)
+
+                # Compute loss
                 model.zero_grad()
                 log_probs = model(images)
-                loss = self.criterion(log_probs, labels)
-                loss.backward()
+                loss = self.criterion(log_probs, [labels])
 
-            # clip, average, and perturb gradients
+                print(loss)
+
+                # clip, average, and perturb gradients
+                hi = 0
+                sum_clipped_grads = {name: torch.zeros_like(param) for name, param in model.named_parameters()}
+
+                # clip individual gradient g_i for i in {1...m}
+                for i in range(self.args.local_bs):  #loss.size(0)
+                    hi += 1
+                    print(hi)
+
+                    # backward pass: compute gradient g_i
+                    loss[i].backward(retain_graph=True)
+
+                    # L2 norm of g_i
+                    total_norm = 0
+                    for param in model.parameters():
+                        param_norm = param.grad.data.norm(2)
+                        total_norm += param_norm.item() ** 2
+                    total_norm = total_norm ** (1. / 2)
+                    print(total_norm)
+
+                    #model.zero_grad()
+
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
+                    for name, param in model.named_parameters():
+
+
+
+                        #print(name)
+                        #print(param.grad.size())
+                        #print(param.grad.sum())
+                        #print(loss[i])
+
+
+                        sum_clipped_grads[name] += param.grad / loss.size(0)
+
+                        #param *= min(1, clipping_norm / sum(param ** 2))
+                        #per_sample_grad = param.grad.detach().clone()
+                        #clip_grad_norm_(per_sample_grad, max_norm=clipping_norm)
+                        #param.accumulated_grads.append(per_sample_grad)
+
+                # Update
+                optimizer.step()
+
+
+                exit()
+
+
+
+                # Aggregate gradients (Temp)
+                for param in model.parameters():
+                    param.grad = torch.stack(param.accumulated_grads, dim=0)
+
+                # Add noise
+                for param in model.parameters():
+                    param += torch.normal(mean=0, std=noise_mag)
+
+                # theta_{i+1}
+                optimizer.step()
+
+
+                if self.args.verbose and (batch_idx % 10 == 0):
+                    print('| Global Round : {} | Local Epoch : {} | [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                        global_round, iter, batch_idx * len(images),
+                        len(self.trainloader.dataset),
+                        100. * batch_idx / len(self.trainloader), loss.item()))
+                self.logger.add_scalar('loss', loss.item())
+                batch_loss.append(loss.item())
+                # go to next epoch....
+            epoch_loss.append(sum(batch_loss)/len(batch_loss))
+
+        return model.state_dict(), sum(epoch_loss) / len(epoch_loss)
+
+    def dp_sgdV2(self, model, global_round, clipping_norm=1, noise_mag=1.0):
+        #################
+        ## ALGORITHM 1 ##
+        #################
+
+        # Set mode to train model
+        model.train()
+        epoch_loss = []
+
+        # Set optimizer for the local updates
+        if self.args.optimizer == 'sgd':
+            optimizer = torch.optim.SGD(model.parameters(), lr=self.args.lr,
+                                        momentum=0.5)
+        elif self.args.optimizer == 'adam':
+            optimizer = torch.optim.Adam(model.parameters(), lr=self.args.lr,
+                                         weight_decay=1e-4)
+        # for each epoch (1...E)
+        for iter in range(self.args.local_ep):
+
+            batch_loss = []
+            #sum_clipped_grads = {param in model.named_parameters()}
+            sum_clipped_grads = {name: torch.zeros_like(param) for name, param in model.named_parameters()}
+
+            # batch data (x,y) (1...m)
+            for batch_idx, (images, labels) in enumerate(self.trainloader):
+
+                images, labels = images.to(self.device), labels.to(self.device)
+                print("jskfa")
+                print(images)
+
+                print("jskfa")
+                print(images[[[0]]])
+
+                print(labels.shape)
+
+                # gradient g_i for i in {1...m}
+                for i in range(self.args.local_bs):  # loss.size(0)
+
+                    # Compute loss i
+                    model.zero_grad()
+                    log_probs = model(torch.FloatTensor(images[[[i]]]))
+                    print(log_probs)
+                    loss = self.criterion(log_probs, torch.FloatTensor(labels[i]))
+
+                    # backward pass: compute gradient g_i
+                    loss.backward(retain_graph=True)
+
+                    # L2 norm of g_i
+                    total_norm = 0
+                    for param in model.parameters():
+                        param_norm = param.grad.data.norm(2)
+                        total_norm += param_norm.item() ** 2
+                    total_norm = total_norm ** (1. / 2)
+                    print(total_norm)
+
+                    # Clipped g_i
+                    for param in model.parameters():
+                        sum_clipped_grads += param * min(1, clipping_norm / total_norm)
+
+                if self.args.verbose and (batch_idx % 10 == 0):
+                    print('| Global Round : {} | Local Epoch : {} | [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                        global_round, iter, batch_idx * len(images),
+                        len(self.trainloader.dataset),
+                                            100. * batch_idx / len(self.trainloader), loss.item()))
+                self.logger.add_scalar('loss', loss.item())
+                batch_loss.append(loss.item())
+
+            # Add noise to clipped parameters
             for param in model.parameters():
-                per_sample_grad = param.grad.detach().clone()
-                clip_grad_norm_(per_sample_grad, max_norm=clipping_norm)
-                param.accumulated_grads.append(per_sample_grad)
+                sum_clipped_grads += torch.normal(mean=0, std=noise_mag)
 
-            # Aggregate gradients (Temp)
-            for param in model.parameters():
-                param.grad = torch.stack(param.accumulated_grads, dim=0)
+            # take average
+            sum_clipped_grads / self.args.local_bs
 
-            # Add noise
-            for param in model.parameters():
-                param += torch.normal(mean=0, std=noise_mag * max_grad_norm)
+            # Update: theta_{i+1}
+            optimizer.step() # do this manually
 
-            # theta_{i+1}
-            optimizer.step()
+            # Append loss, go to next epoch...
+            epoch_loss.append(sum(batch_loss) / len(batch_loss))
 
+        return model.state_dict(), sum(epoch_loss) / len(epoch_loss)
 
-            if self.args.verbose and (batch_idx % 10 == 0):
-                print('| Global Round : {} | Local Epoch : {} | [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                    global_round, iter, batch_idx * len(images),
-                    len(self.trainloader.dataset),
-                    100. * batch_idx / len(self.trainloader), loss.item()))
-            self.logger.add_scalar('loss', loss.item())
-            batch_loss.append(loss.item())
-            # go to next epoch....
+    def dp_sgdV3(self, model, global_round, clipping_norm=100., noise_mag=1.0):
+        #################
+        ## ALGORITHM 1 ##
+        #################
 
-        epoch_loss.append(sum(batch_loss)/len(batch_loss))
+        # Set mode to train model
+        model.train()
+        epoch_loss = []
 
+        # Set optimizer for the local updates
+        if self.args.optimizer == 'sgd':
+            optimizer = torch.optim.SGD(model.parameters(), lr=self.args.lr,
+                                        momentum=0.5)
+        elif self.args.optimizer == 'adam':
+            optimizer = torch.optim.Adam(model.parameters(), lr=self.args.lr,
+                                         weight_decay=1e-4)
+        # for each epoch (1...E)
+        for iter in range(self.args.local_ep):
+
+            batch_loss = []
+            sum_clipped_grads = {name: torch.zeros_like(param) for name, param in model.named_parameters()}
+
+            # for i in 1...batch_size
+            for i in range(self.args.local_bs):  # loss.size(0)
+
+                # 'fake' loop draws ONE pair (x_i,y_i)
+                for batch_idx, (images, labels) in enumerate(self.trainloader):
+
+                    images, labels = images.to(self.device), labels.to(self.device)
+
+                    # Compute: Loss_i
+                    model.zero_grad()
+                    log_probs = model(torch.FloatTensor(images))
+                    loss = self.criterion(log_probs, labels)
+
+                    # Compute: g_i
+                    loss.backward(retain_graph=True)
+
+                    # Compute: L2 norm of g_i
+                    total_norm = 0
+                    for param in model.parameters():
+                        param_norm = param.grad.data.norm(2)
+                        total_norm += param_norm.item() ** 2
+                    total_norm = total_norm ** (1. / 2)
+
+                    # Clip: g_i
+                    # Accumulate gradients
+                    for name, param in model.named_parameters():
+                        sum_clipped_grads[name] += param * min(1, clipping_norm / total_norm)
+
+                # Perturb gradients and take average.
+                for name, param in model.named_parameters():
+                    sum_clipped_grads[name] += 0.01 #torch.normal(mean=0.0, std=noise_mag, out=None)
+                sum_clipped_grads[name] / self.args.local_bs
+
+                # Update: theta_{i+1}
+                for name, param in model.named_parameters():
+                    param = sum_clipped_grads[name]
+                optimizer.step() # do this manually
+
+                # Reset gradients
+                optimizer.zero_grad()
+
+                # Record: loss
+                batch_loss.append(loss.item())
+
+            # Append loss, go to next epoch...
+            epoch_loss.append(sum(batch_loss) / len(batch_loss))
 
         return model.state_dict(), sum(epoch_loss) / len(epoch_loss)
 

@@ -85,15 +85,14 @@ if __name__ == '__main__':
         for idx in idxs_users:
             local_model = LocalUpdate(args=args, dataset=train_dataset,
                                       idxs=user_groups[idx], logger=logger)
-            w, loss = local_model.update_weights(
-                model=copy.deepcopy(global_model), global_round=epoch)
+
+            # Update local model idx
+            w, loss = local_model.dp_sgdV3(model=copy.deepcopy(global_model), global_round=epoch, clipping_norm=1, noise_mag=0)
 
             ### Add noise to w
             #with torch.no_grad():
             #    for param in model.parameters():
             #        param.add_(torch.randn(param.size()) * 0.1)
-            print(w)
-            exit()
             local_weights.append(copy.deepcopy(w))
             local_losses.append(copy.deepcopy(loss))
 
@@ -141,9 +140,9 @@ if __name__ == '__main__':
     print('\n Total Run Time: {0:0.4f}'.format(time.time()-start_time))
 
     # PLOTTING (optional)
-    # import matplotlib
-    # import matplotlib.pyplot as plt
-    # matplotlib.use('Agg')
+    #import matplotlib
+    import matplotlib.pyplot as plt
+    #matplotlib.use('Agg')
 
     # Plot Loss curve
     # plt.figure()
