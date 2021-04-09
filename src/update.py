@@ -7,8 +7,8 @@ from torch import nn
 from torch.utils.data import DataLoader, Dataset
 from torch.nn.utils import clip_grad_norm_
 import numpy as np
-
 import autograd_hacks
+import copy
 
 class DatasetSplit(Dataset):
     """An abstract Dataset class wrapped around Pytorch Dataset class.
@@ -288,6 +288,8 @@ class LocalUpdate(object):
         model.train()
         epoch_loss = []
 
+        model_dummy = copy.deepcopy(model)
+
         # Set optimizer for the local updates
         if self.args.optimizer == 'sgd':
             optimizer = torch.optim.SGD(model.parameters(), lr=self.args.lr,
@@ -298,24 +300,26 @@ class LocalUpdate(object):
         # for each epoch (1...E)
         for iter in range(self.args.local_ep):
 
-            model.zero_grad()
             batch_loss = []
-            sum_clipped_grads = {name: torch.zeros_like(param) for name, param in model.named_parameters()}
-            #print(sum_clipped_grads) # zeros
+
+            print("here")
 
             # for each batch data (1...B)
             for batch_idx, (images, labels) in enumerate(self.trainloader):
 
                 model.zero_grad()
+                # add hooks
                 autograd_hacks.add_hooks(model)
+
+                # Forward pass, compute loss, backwards pass
                 log_probs = model(torch.FloatTensor(images))
                 loss = self.criterion(log_probs, labels)
                 loss.backward(retain_graph=True)
 
-                # per-sample gradients (g_i)
-                autograd_hacks.compute_grad1(model)
+                # Per-sample gradients g_i
+                autograd_hacks.compute_grad1(model) # PROBLEM 2ND iteraton
 
-                # Calculate the norms
+                # Calculate L2 norm for each g_i
                 g_norms = torch.zeros(self.args.local_bs)
                 for name, param in model.named_parameters():
                     if 'bias' not in name:
@@ -324,62 +328,46 @@ class LocalUpdate(object):
                         g_norms += param.grad1.data.norm(2, dim=1) ** 2
                 g_norms.sqrt
 
-                # Clipping factor min(1, S / ||g_i||_2
-                print(clipping_norm * g_norms ** -0.5)
-                print(torch.clamp(clipping_norm * g_norms ** -0.5, max=1))
+                # Clipping factor =  min(1, S / norm(g_i))
                 clip_factor = torch.clamp(clipping_norm * g_norms ** -0.5, max=1)
 
                 # Clip gradients
                 for param in model.parameters():
-                    #param = param * clip_factor
-                    print()
+                    for i in range(self.args.local_bs):
+                        param.grad1[i] = param.grad1[i] * clip_factor[i] * 2.0
 
-                # average
+                # Noisy batch update
                 for param in model.parameters():
-                    param = param.grad1.mean(dim=0) # + noise
+                    # take average
+                    param.grad = param.grad1.mean(dim=0)
 
-                exit()
+                    # add noise
+                    param.grad.add_(torch.randn(param.size()) * noise_mag)
 
+                    # update weights
+                    param.data -= self.args.lr * param.grad.data
 
+                # reset gradients
+                print("hi")
+                model.zero_grad()
+                autograd_hacks.clear_backprops(model)
 
-                # Compute: L2 norm of g_i
-                total_norm = 0
+                for layer in model.modules():
+                    if hasattr(layer, 'backprops_list'):
+                        del layer.backprops_list
+                #autograd_hacks.disable_hooks()
+
+                # per sample gradients still here.... ???
                 for param in model.parameters():
-                    param_norm = param.grad.data.norm(2)
-                    total_norm += param_norm.item() ** 2
-                total_norm = total_norm ** (1. / 2)
+                    print(param.grad1.shape)
+                    print(param.grad1)
+                    #del param.grad1
 
 
 
-                # Clip: g_i
-                # Accumulate gradients
-                with torch.no_grad():
-                    for name, param in model.named_parameters():
-                        sum_clipped_grads[name] += param #* min(1, clipping_norm / (total_norm+0.01))
-                        #print(sum_clipped_grads)
-
-                # Perturb gradients and take average.
-                with torch.no_grad():
-                    for name, param in model.named_parameters():
-                        sum_clipped_grads[name] += 0 #np.random.normal(0, clipping_norm*noise_mag, 1)
-                        #param.add_(torch.randn(param.size()) * 0.1)
-                print(sum_clipped_grads)
-                #torch.div(sum_clipped_grads, self.args.local_bs)
-                print("asfd")
-                print(sum_clipped_grads)
-                print(self.args.local_bs)
-                exit()
-
-
-                # Update: theta_{i+1}
-                with torch.no_grad():
-                    for name, param in model.named_parameters():
-                        param -= self.args.lr * sum_clipped_grads[name]
-
-                # Record: loss
+                # Record loss, reset gradients
                 batch_loss.append(loss.item())
 
-            #print(sum_clipped_grads)
 
             # Append loss, go to next epoch...
             epoch_loss.append(sum(batch_loss) / len(batch_loss))
