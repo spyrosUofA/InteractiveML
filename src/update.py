@@ -6,6 +6,9 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 from torch.nn.utils import clip_grad_norm_
+import numpy as np
+
+import autograd_hacks
 
 class DatasetSplit(Dataset):
     """An abstract Dataset class wrapped around Pytorch Dataset class.
@@ -30,7 +33,7 @@ class LocalUpdate(object):
             dataset, list(idxs))
         self.device = 'cuda' if args.gpu else 'cpu'
         # Default criterion set to NLL loss function
-        self.criterion = nn.NLLLoss(reduction='none').to(self.device)
+        self.criterion = nn.NLLLoss().to(self.device)
 
     def train_val_test(self, dataset, idxs):
         """
@@ -58,7 +61,7 @@ class LocalUpdate(object):
         # Set optimizer for the local updates
         if self.args.optimizer == 'sgd':
             optimizer = torch.optim.SGD(model.parameters(), lr=self.args.lr,
-                                        momentum=0.5)
+                                        momentum=0.0)
         elif self.args.optimizer == 'adam':
             optimizer = torch.optim.Adam(model.parameters(), lr=self.args.lr,
                                          weight_decay=1e-4)
@@ -276,7 +279,7 @@ class LocalUpdate(object):
 
         return model.state_dict(), sum(epoch_loss) / len(epoch_loss)
 
-    def dp_sgdV3(self, model, global_round, clipping_norm=100., noise_mag=1.0):
+    def dp_sgdV3(self, model, global_round, clipping_norm=15., noise_mag=1.0):
         #################
         ## ALGORITHM 1 ##
         #################
@@ -295,52 +298,88 @@ class LocalUpdate(object):
         # for each epoch (1...E)
         for iter in range(self.args.local_ep):
 
+            model.zero_grad()
             batch_loss = []
             sum_clipped_grads = {name: torch.zeros_like(param) for name, param in model.named_parameters()}
+            #print(sum_clipped_grads) # zeros
 
-            # for i in 1...batch_size
-            for i in range(self.args.local_bs):  # loss.size(0)
+            # for each batch data (1...B)
+            for batch_idx, (images, labels) in enumerate(self.trainloader):
 
-                # 'fake' loop draws ONE pair (x_i,y_i)
-                for batch_idx, (images, labels) in enumerate(self.trainloader):
+                model.zero_grad()
+                autograd_hacks.add_hooks(model)
+                log_probs = model(torch.FloatTensor(images))
+                loss = self.criterion(log_probs, labels)
+                loss.backward(retain_graph=True)
 
-                    images, labels = images.to(self.device), labels.to(self.device)
+                # per-sample gradients (g_i)
+                autograd_hacks.compute_grad1(model)
 
-                    # Compute: Loss_i
-                    model.zero_grad()
-                    log_probs = model(torch.FloatTensor(images))
-                    loss = self.criterion(log_probs, labels)
+                # Calculate the norms
+                g_norms = torch.zeros(self.args.local_bs)
+                for name, param in model.named_parameters():
+                    if 'bias' not in name:
+                        g_norms += param.grad1.data.norm(2, dim=(1,2)) ** 2
+                    else:
+                        g_norms += param.grad1.data.norm(2, dim=1) ** 2
+                g_norms.sqrt
 
-                    # Compute: g_i
-                    loss.backward(retain_graph=True)
+                # Clipping factor min(1, S / ||g_i||_2
+                print(clipping_norm * g_norms ** -0.5)
+                print(torch.clamp(clipping_norm * g_norms ** -0.5, max=1))
+                clip_factor = torch.clamp(clipping_norm * g_norms ** -0.5, max=1)
 
-                    # Compute: L2 norm of g_i
-                    total_norm = 0
-                    for param in model.parameters():
-                        param_norm = param.grad.data.norm(2)
-                        total_norm += param_norm.item() ** 2
-                    total_norm = total_norm ** (1. / 2)
+                # Clip gradients
+                for param in model.parameters():
+                    #param = param * clip_factor
+                    print()
 
-                    # Clip: g_i
-                    # Accumulate gradients
+                # average
+                for param in model.parameters():
+                    param = param.grad1.mean(dim=0) # + noise
+
+                exit()
+
+
+
+                # Compute: L2 norm of g_i
+                total_norm = 0
+                for param in model.parameters():
+                    param_norm = param.grad.data.norm(2)
+                    total_norm += param_norm.item() ** 2
+                total_norm = total_norm ** (1. / 2)
+
+
+
+                # Clip: g_i
+                # Accumulate gradients
+                with torch.no_grad():
                     for name, param in model.named_parameters():
-                        sum_clipped_grads[name] += param * min(1, clipping_norm / total_norm)
+                        sum_clipped_grads[name] += param #* min(1, clipping_norm / (total_norm+0.01))
+                        #print(sum_clipped_grads)
 
                 # Perturb gradients and take average.
-                for name, param in model.named_parameters():
-                    sum_clipped_grads[name] += 0.01 #torch.normal(mean=0.0, std=noise_mag, out=None)
-                sum_clipped_grads[name] / self.args.local_bs
+                with torch.no_grad():
+                    for name, param in model.named_parameters():
+                        sum_clipped_grads[name] += 0 #np.random.normal(0, clipping_norm*noise_mag, 1)
+                        #param.add_(torch.randn(param.size()) * 0.1)
+                print(sum_clipped_grads)
+                #torch.div(sum_clipped_grads, self.args.local_bs)
+                print("asfd")
+                print(sum_clipped_grads)
+                print(self.args.local_bs)
+                exit()
+
 
                 # Update: theta_{i+1}
-                for name, param in model.named_parameters():
-                    param = sum_clipped_grads[name]
-                optimizer.step() # do this manually
-
-                # Reset gradients
-                optimizer.zero_grad()
+                with torch.no_grad():
+                    for name, param in model.named_parameters():
+                        param -= self.args.lr * sum_clipped_grads[name]
 
                 # Record: loss
                 batch_loss.append(loss.item())
+
+            #print(sum_clipped_grads)
 
             # Append loss, go to next epoch...
             epoch_loss.append(sum(batch_loss) / len(batch_loss))
