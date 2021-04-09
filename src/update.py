@@ -288,12 +288,13 @@ class LocalUpdate(object):
         model.train()
         epoch_loss = []
 
+
         model_dummy = copy.deepcopy(model)
 
         # Set optimizer for the local updates
         if self.args.optimizer == 'sgd':
             optimizer = torch.optim.SGD(model.parameters(), lr=self.args.lr,
-                                        momentum=0.5)
+                                        momentum=0.0)
         elif self.args.optimizer == 'adam':
             optimizer = torch.optim.Adam(model.parameters(), lr=self.args.lr,
                                          weight_decay=1e-4)
@@ -307,6 +308,8 @@ class LocalUpdate(object):
             # for each batch data (1...B)
             for batch_idx, (images, labels) in enumerate(self.trainloader):
 
+                print(batch_idx)
+
                 model.zero_grad()
                 # add hooks
                 autograd_hacks.add_hooks(model)
@@ -319,10 +322,19 @@ class LocalUpdate(object):
                 # Per-sample gradients g_i
                 autograd_hacks.compute_grad1(model) # PROBLEM 2ND iteraton
 
+                #print(autograd_hacks.is_supported(model))
+                #exit()
+
+                autograd_hacks.disable_hooks()
+
+                print("images.shape")
+                print(len(labels))
+
                 # Calculate L2 norm for each g_i
-                g_norms = torch.zeros(self.args.local_bs)
+                g_norms = torch.zeros(labels.shape)
                 for name, param in model.named_parameters():
                     if 'bias' not in name:
+                        print(param.grad1.data.shape)
                         g_norms += param.grad1.data.norm(2, dim=(1,2)) ** 2
                     else:
                         g_norms += param.grad1.data.norm(2, dim=1) ** 2
@@ -333,7 +345,7 @@ class LocalUpdate(object):
 
                 # Clip gradients
                 for param in model.parameters():
-                    for i in range(self.args.local_bs):
+                    for i in range(len(labels)):
                         param.grad1[i] = param.grad1[i] * clip_factor[i] * 2.0
 
                 # Noisy batch update
@@ -345,25 +357,11 @@ class LocalUpdate(object):
                     param.grad.add_(torch.randn(param.size()) * noise_mag)
 
                     # update weights
-                    param.data -= self.args.lr * param.grad.data
+                    param.data -= self.args.lr * param.grad
 
-                # reset gradients
-                print("hi")
-                model.zero_grad()
-                autograd_hacks.clear_backprops(model)
-
-                for layer in model.modules():
-                    if hasattr(layer, 'backprops_list'):
-                        del layer.backprops_list
-                #autograd_hacks.disable_hooks()
-
-                # per sample gradients still here.... ???
-                for param in model.parameters():
-                    print(param.grad1.shape)
-                    print(param.grad1)
-                    #del param.grad1
-
-
+                # revert model back to old format... bizarre
+                model_dummy.load_state_dict(model.state_dict())
+                model = copy.deepcopy(model_dummy)
 
                 # Record loss, reset gradients
                 batch_loss.append(loss.item())
