@@ -32,7 +32,7 @@ if __name__ == '__main__':
     exp_details(args)
 
     # torch setup
-    torch.seed(args.seed)
+    torch.manual_seed(args.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # load dataset and user groups
@@ -55,7 +55,7 @@ if __name__ == '__main__':
         len_in = 1
         for x in img_size:
             len_in *= x
-            global_model = MLP(dim_in=len_in, dim_hidden=32,
+            global_model = MLP(dim_in=len_in, dim_hidden=64,
                                dim_out=args.num_classes)
     else:
         exit('Error: unrecognized model')
@@ -92,7 +92,7 @@ if __name__ == '__main__':
                                       idxs=user_groups[idx], logger=logger)
 
             # Update local model idx
-            w, loss = local_model.dp_sgdV3(model=copy.deepcopy(global_model), global_round=epoch, clipping_norm=1, noise_mag=0)
+            w, loss = local_model.dp_sgdV3(model=copy.deepcopy(global_model), global_round=epoch, clipping_norm=100, noise_mag=0)
             local_weights.append(copy.deepcopy(w))
             local_losses.append(copy.deepcopy(loss))
 

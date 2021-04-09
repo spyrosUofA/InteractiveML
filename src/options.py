@@ -8,6 +8,13 @@ import argparse
 def args_parser():
     parser = argparse.ArgumentParser()
 
+    # Differential Privacy arguments
+    #parser.add_argument('--epsilon', type=float, default=0,
+    #                    help="epsilon parameter")
+    #parser.add_argument('--clipping_norm', type=float, default=10000,
+    #                    help="clipping norm (C) for DP-SGD")
+
+
     # federated arguments (Notation for the arguments followed from paper)
     parser.add_argument('--epochs', type=int, default=10,
                         help="number of rounds of training")

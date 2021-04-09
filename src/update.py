@@ -43,7 +43,7 @@ class LocalUpdate(object):
         idxs_test = idxs[int(0.9*len(idxs)):]
 
         trainloader = DataLoader(DatasetSplit(dataset, idxs_train),
-                                 batch_size=1, shuffle=True) #self.args.local_bs
+                                 batch_size=self.args.local_bs, shuffle=True) #self.args.local_bs
         validloader = DataLoader(DatasetSplit(dataset, idxs_val),
                                  batch_size=int(len(idxs_val)/10), shuffle=False)
         testloader = DataLoader(DatasetSplit(dataset, idxs_test),

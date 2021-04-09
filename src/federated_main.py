@@ -37,6 +37,8 @@ if __name__ == '__main__':
     # load dataset and user groups
     train_dataset, test_dataset, user_groups = get_dataset(args)
 
+    testing_accuracy = [0]
+
 
     # BUILD MODEL
     if args.model == 'cnn':
@@ -109,6 +111,11 @@ if __name__ == '__main__':
             list_acc.append(acc)
             list_loss.append(loss)
         train_accuracy.append(sum(list_acc)/len(list_acc))
+
+        # test accuracy
+        test_acc, test_loss = test_inference(args, global_model, test_dataset)
+        testing_accuracy.append(test_acc)
+        print(testing_accuracy)
 
         # print global training loss after every 'i' rounds
         if (epoch+1) % print_every == 0:
