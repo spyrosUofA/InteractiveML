@@ -31,8 +31,11 @@ if __name__ == '__main__':
     args = args_parser()
     exp_details(args)
 
-    # torch setup
+    # set seed
     torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+
+    # device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # load dataset and user groups
@@ -92,7 +95,7 @@ if __name__ == '__main__':
                                       idxs=user_groups[idx], logger=logger)
 
             # Update local model idx
-            w, loss = local_model.dp_sgdV3(model=copy.deepcopy(global_model), global_round=epoch, clipping_norm=100, noise_mag=0)
+            w, loss = local_model.dp_sgd(model=copy.deepcopy(global_model), global_round=epoch, norm_bound=10, noise_scale=0.01)
             local_weights.append(copy.deepcopy(w))
             local_losses.append(copy.deepcopy(loss))
 
