@@ -9,14 +9,14 @@ def args_parser():
     parser = argparse.ArgumentParser()
 
     # Differential Privacy arguments
-    #parser.add_argument('--epsilon', type=float, default=0,
-    #                    help="epsilon parameter")
-    #parser.add_argument('--clipping_norm', type=float, default=10000,
-    #                    help="clipping norm (C) for DP-SGD")
+    parser.add_argument('--norm_bound', type=float, default=100.,
+                        help="norm bound (C) for DP-SGD")
+    parser.add_argument('--noise_scale', type=float, default=0.0,
+                        help="noise scale (sigma) for DP-SGD")
 
 
     # federated arguments (Notation for the arguments followed from paper)
-    parser.add_argument('--epochs', type=int, default=10,
+    parser.add_argument('--epochs', type=int, default=20,
                         help="number of rounds of training")
     parser.add_argument('--num_users', type=int, default=100,
                         help="number of users: K")
@@ -24,12 +24,12 @@ def args_parser():
                         help='the fraction of clients: C')
     parser.add_argument('--local_ep', type=int, default=10,
                         help="the number of local epochs: E")
-    parser.add_argument('--local_bs', type=int, default=7,
+    parser.add_argument('--local_bs', type=int, default=10,
                         help="local batch size: B")
-    parser.add_argument('--lr', type=float, default=0.01,
+    parser.add_argument('--lr', type=float, default=0.05,
                         help='learning rate')
-    parser.add_argument('--momentum', type=float, default=0.5,
-                        help='SGD momentum (default: 0.5)')
+    parser.add_argument('--momentum', type=float, default=0.0,
+                        help='SGD momentum (default: 0.0)')
 
     # model arguments
     parser.add_argument('--model', type=str, default='mlp', help='model name')

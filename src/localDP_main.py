@@ -95,7 +95,7 @@ if __name__ == '__main__':
                                       idxs=user_groups[idx], logger=logger)
 
             # Update local model idx
-            w, loss = local_model.dp_sgd(model=copy.deepcopy(global_model), global_round=epoch, norm_bound=10, noise_scale=0.01)
+            w, loss = local_model.dp_sgd(model=copy.deepcopy(global_model), global_round=epoch, norm_bound=1.15, noise_scale=0.01)
             local_weights.append(copy.deepcopy(w))
             local_losses.append(copy.deepcopy(loss))
 
@@ -110,6 +110,8 @@ if __name__ == '__main__':
         testing_accuracy.append(test_acc)
         print(testing_accuracy)
 
-    # plot test accuracy
-    np.savetxt("test_accuracy.txt", testing_accuracy)
-    plt.plot(range(len(testing_accuracy)), testing_accuracy)
+
+    # save test accuracy
+    np.savetxt('../save/test_Acc_{}_{}_seed{}_clip{}_scale{}.txt'.
+                 format(args.dataset, args.model, args.seed, args.norm_bound, args.noise_scale), testing_accuracy)
+

@@ -10,6 +10,8 @@ import numpy as np
 import autograd_hacks
 import copy
 
+import statistics
+
 class DatasetSplit(Dataset):
     """An abstract Dataset class wrapped around Pytorch Dataset class.
     """
@@ -135,8 +137,8 @@ class LocalUpdate(object):
                         g_norms += param.grad1.data.norm(2, dim=1) ** 2
 
                 # Clipping factor =  min(1, C / norm(gi)) ....OR.... max(1, norm(gi) / C)
-                #clip_factor = torch.clamp(norm_bound * g_norms ** -0.5, max=1)  # potential for x/0 here...
                 clip_factor = torch.clamp(g_norms ** 0.5 / norm_bound, min=1)
+                #print(np.percentile(g_norms ** 0.5, [25, 50, 75]))
 
                 # Clip each gradient
                 for param in model.parameters():
