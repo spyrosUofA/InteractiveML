@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 # Python version: 3.6
 
-
+import sys
 import os
 import copy
 import time
@@ -90,12 +90,12 @@ if __name__ == '__main__':
         idxs_users = np.random.choice(range(args.num_users), m, replace=False)
 
         for idx in idxs_users:
-            print(idx)
             local_model = LocalUpdate(args=args, dataset=train_dataset,
                                       idxs=user_groups[idx], logger=logger)
 
             # Update local model idx
-            w, loss = local_model.dp_sgd(model=copy.deepcopy(global_model), global_round=epoch, norm_bound=1.15, noise_scale=0.01)
+            w, loss = local_model.dp_sgd(model=copy.deepcopy(global_model), global_round=epoch,
+                                         norm_bound=args.norm_bound, noise_scale=args.noise_scale)
             local_weights.append(copy.deepcopy(w))
             local_losses.append(copy.deepcopy(loss))
 
@@ -110,8 +110,6 @@ if __name__ == '__main__':
         testing_accuracy.append(test_acc)
         print(testing_accuracy)
 
-
     # save test accuracy
     np.savetxt('../save/test_Acc_{}_{}_seed{}_clip{}_scale{}.txt'.
                  format(args.dataset, args.model, args.seed, args.norm_bound, args.noise_scale), testing_accuracy)
-
