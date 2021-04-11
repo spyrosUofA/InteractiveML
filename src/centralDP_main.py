@@ -18,6 +18,8 @@ from update import LocalUpdate, test_inference
 from models import MLP, CNNMnist, CNNFashion_Mnist, CNNCifar
 from utils import get_dataset, average_weights, exp_details
 
+import statistics
+
 import matplotlib.pyplot as plt
 
 
@@ -82,7 +84,7 @@ if __name__ == '__main__':
     testing_accuracy = [0]
 
     for epoch in tqdm(range(args.epochs)):
-        local_weights, local_losses = [], []
+        local_del_w, local_norms = [], []
         print(f'\n | Global Training Round : {epoch+1} |\n')
 
         global_model.train()
@@ -94,13 +96,25 @@ if __name__ == '__main__':
                                       idxs=user_groups[idx], logger=logger)
 
             # Update local model idx
-            w, loss = local_model.dp_sgd(model=copy.deepcopy(global_model), global_round=epoch,
-                                         norm_bound=args.norm_bound, noise_scale=args.noise_scale)
-            local_weights.append(copy.deepcopy(w))
-            local_losses.append(copy.deepcopy(loss))
+            del_w, zeta = local_model.participant_update_Alg2(model=copy.deepcopy(global_model), global_round=epoch)
+            local_del_w.append(copy.deepcopy(del_w))
+            local_norms.append(copy.deepcopy(zeta))
 
-        # average local model weights, update global model
-        global_weights = average_weights(local_weights)
+        # median of norms
+        median_norms = np.median(local_norms)
+
+        # clip norms
+        for i in range(len(idxs_users)):
+            for param in local_del_w[i].values():
+                param /= max(1, local_norms[i] / median_norms)
+
+        # average local model weights
+        average_del_w = average_weights(local_del_w)
+
+        # Update model and add noise
+        # w_{t+1} = w_{t} + avg(del_w1 + del_w2 + ... + del_wc) + Noise
+
+
         global_model.load_state_dict(global_weights)
 
         # test accuracy
@@ -109,5 +123,5 @@ if __name__ == '__main__':
         print(testing_accuracy)
 
     # save test accuracy
-    np.savetxt('../save/test_Acc_{}_{}_seed{}_clip{}_scale{}.txt'.
+    np.savetxt('../save/GlobalDP_{}_{}_seed{}_clip{}_scale{}.txt'.
                  format(args.dataset, args.model, args.seed, args.norm_bound, args.noise_scale), testing_accuracy)

@@ -9,11 +9,14 @@ def args_parser():
     parser = argparse.ArgumentParser()
 
     # Differential Privacy arguments
-    parser.add_argument('--norm_bound', type=float, default=100.,
-                        help="norm bound (C) for DP-SGD")
-    parser.add_argument('--noise_scale', type=float, default=0.0,
+    parser.add_argument('--norm_bound', type=float, default=0.4,
+                        help="norm bound (S) for DP-SGD")
+    parser.add_argument('--noise_scale', type=float, default=0.8,
                         help="noise scale (sigma) for DP-SGD")
-
+    parser.add_argument('--epsilon', type=float, default=0.0,
+                        help="differential privacy target")
+    parser.add_argument('--delta', type=float, default=0.0,
+                        help="differential privacy threshold")
 
     # federated arguments (Notation for the arguments followed from paper)
     parser.add_argument('--epochs', type=int, default=20,
