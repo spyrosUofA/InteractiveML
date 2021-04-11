@@ -113,8 +113,9 @@ if __name__ == '__main__':
 
         # Update model and add noise
         # w_{t+1} = w_{t} + avg(del_w1 + del_w2 + ... + del_wc) + Noise
-
-
+        for param, param_del_w in zip(global_weights.values(), average_del_w.values()):
+            param += param_del_w
+            param += torch.randn(param.size()) * args.noise_scale * median_norms / (len(idxs_users) ** 0.5)
         global_model.load_state_dict(global_weights)
 
         # test accuracy
@@ -125,3 +126,4 @@ if __name__ == '__main__':
     # save test accuracy
     np.savetxt('../save/GlobalDP_{}_{}_seed{}_clip{}_scale{}.txt'.
                  format(args.dataset, args.model, args.seed, args.norm_bound, args.noise_scale), testing_accuracy)
+
