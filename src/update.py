@@ -130,19 +130,20 @@ class LocalUpdate(object):
 
                 # Compute L2^2 norm for each g_i
                 g_norms = torch.zeros(labels.shape)
+                g_norms1 = torch.zeros(labels.shape)
+
                 for name, param in model.named_parameters():
-                    if 'bias' not in name:
-                        g_norms += param.grad1.data.norm(2, dim=(1, 2)) ** 2
-                    else:
-                        g_norms += param.grad1.data.norm(2, dim=1) ** 2
+                    g_norms1 += param.grad1.flatten(1).norm(2, dim=1) ** 2
+
+                    #if 'bias' not in name:
+                    #    g_norms += param.grad1.data.norm(2, dim=(1, 2)) ** 2
+                    #else:
+                    #    g_norms += param.grad1.data.norm(2, dim=1) ** 2
+
 
                 # Clipping factor =  min(1, C / norm(gi)) ....OR.... max(1, norm(gi) / C)
                 clip_factor = torch.clamp(g_norms ** 0.5 / norm_bound, min=1)
                 #print(np.percentile(g_norms ** 0.5, [25, 50, 75]))
-                #print(g_norms ** 0.5)
-                #print("clip_factor")
-                #print(clip_factor)
-                #exit()
 
                 # Clip each gradient
                 for param in model.parameters():
@@ -261,7 +262,6 @@ class LocalUpdate(object):
 
         model_r = copy.deepcopy(model)
 
-
         # Set optimizer for the local updates
         if self.args.optimizer == 'sgd':
             optimizer = torch.optim.SGD(model.parameters(), lr=self.args.lr,
@@ -302,11 +302,59 @@ class LocalUpdate(object):
 
         return model.state_dict(), zeta_norm
 
+    def poisoned_participant_update(self, model, global_round):
+        # Poisoned attack by doing gradient ASCENT
+        # ALGORITHM 1 from: https://arxiv.org/pdf/1712.07557.pdf
+
+        # Set mode to train model
+        model.train()
+        epoch_loss = []
+
+        model_r = copy.deepcopy(model)
+
+        # Set optimizer for the local updates
+        if self.args.optimizer == 'sgd':
+            optimizer = torch.optim.SGD(model.parameters(), lr=self.args.lr,
+                                        momentum=0.0)
+        elif self.args.optimizer == 'adam':
+            optimizer = torch.optim.Adam(model.parameters(), lr=self.args.lr,
+                                         weight_decay=1e-4)
+        # for each epoch...
+        for iter in range(self.args.local_ep):
+            batch_loss = []
+
+            # for each batch...
+            for batch_idx, (images, labels) in enumerate(self.trainloader):
+                images, labels = images.to(self.device), labels.to(self.device)
+
+                # Compute accumulated gradients of loss
+                model.zero_grad()
+                log_probs = model(images)
+                loss = self.criterion(log_probs, labels)
+                loss.backward()
+
+                # theta <- theta - lr * grad_Loss
+                for param in model.parameters():
+                    param.data += self.args.lr * param.grad.data
+
+                # batch loss
+                batch_loss.append(loss.item())
+
+            # epoch loss
+            epoch_loss.append(sum(batch_loss) / len(batch_loss))
+
+        # client's local update (Delta <- theta - theta_r)
+        zeta_norm = 0
+        for x, y in zip(model.state_dict().values(), model_r.state_dict().values()):
+            x -= y
+            zeta_norm += x.norm(2).item() ** 2
+        zeta_norm = zeta_norm ** (1. / 2)
+
+        return model.state_dict(), zeta_norm
 
     def inference(self, model):
         """ Returns the inference accuracy and loss.
         """
-
         model.eval()
         loss, total, correct = 0.0, 0.0, 0.0
 
