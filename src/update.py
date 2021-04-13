@@ -130,16 +130,9 @@ class LocalUpdate(object):
 
                 # Compute L2^2 norm for each g_i
                 g_norms = torch.zeros(labels.shape)
-                g_norms1 = torch.zeros(labels.shape)
 
                 for name, param in model.named_parameters():
-                    g_norms1 += param.grad1.flatten(1).norm(2, dim=1) ** 2
-
-                    #if 'bias' not in name:
-                    #    g_norms += param.grad1.data.norm(2, dim=(1, 2)) ** 2
-                    #else:
-                    #    g_norms += param.grad1.data.norm(2, dim=1) ** 2
-
+                    g_norms += param.grad1.flatten(1).norm(2, dim=1) ** 2
 
                 # Clipping factor =  min(1, C / norm(gi)) ....OR.... max(1, norm(gi) / C)
                 clip_factor = torch.clamp(g_norms ** 0.5 / norm_bound, min=1)
