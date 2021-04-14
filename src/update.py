@@ -10,6 +10,7 @@ import numpy as np
 import autograd_hacks
 import copy
 
+import matplotlib.pyplot as plt
 import statistics
 
 class DatasetSplit(Dataset):
@@ -295,7 +296,7 @@ class LocalUpdate(object):
 
         return model.state_dict(), zeta_norm
 
-    def poisoned_participant_update(self, model, global_round):
+    def poisoned_SGA(self, model, global_round):
         # Poisoned attack by doing gradient ASCENT
         # ALGORITHM 1 from: https://arxiv.org/pdf/1712.07557.pdf
 
@@ -319,6 +320,22 @@ class LocalUpdate(object):
             # for each batch...
             for batch_idx, (images, labels) in enumerate(self.trainloader):
                 images, labels = images.to(self.device), labels.to(self.device)
+
+
+
+                fig = plt.figure
+                plt.imshow(images[0, 0], cmap='gray')
+                plt.show()
+
+                print(images[0, 0, 0, 0])
+                images[0, 0, 27, 27] = 2.80
+                print(images[0, 0, 0, 0])
+
+                fig = plt.figure
+                plt.imshow(images[0, 0], cmap='gray')
+                plt.show()
+
+                print(images[0, 0, 15, 15])
 
                 # Compute accumulated gradients of loss
                 model.zero_grad()
@@ -344,6 +361,125 @@ class LocalUpdate(object):
         zeta_norm = zeta_norm ** (1. / 2)
 
         return model.state_dict(), zeta_norm
+
+    def poisoned_BackDoor(self, model, global_round):
+        # Poisoned attack by doing gradient ASCENT
+        # ALGORITHM 1 from: https://arxiv.org/pdf/1712.07557.pdf
+
+        # Set mode to train model
+        model.train()
+        epoch_loss = []
+
+        model_r = copy.deepcopy(model)
+
+        # Set optimizer for the local updates
+        if self.args.optimizer == 'sgd':
+            optimizer = torch.optim.SGD(model.parameters(), lr=self.args.lr,
+                                        momentum=0.0)
+        elif self.args.optimizer == 'adam':
+            optimizer = torch.optim.Adam(model.parameters(), lr=self.args.lr,
+                                         weight_decay=1e-4)
+        # for each epoch...
+        for iter in range(self.args.local_ep):
+            batch_loss = []
+
+            # for each batch...
+            for batch_idx, (images, labels) in enumerate(self.trainloader):
+                images, labels = images.to(self.device), labels.to(self.device)
+
+                # change labels to 0
+                labels *= 0
+
+                # change bottom right pixel corner to white
+                images[0:len(labels), 0, 27, 27] = 2.80
+                #fig = plt.figure
+                #plt.imshow(images[0, 0], cmap='gray')
+                #plt.show()
+
+                # Compute accumulated gradients of loss
+                model.zero_grad()
+                log_probs = model(images)
+                loss = self.criterion(log_probs, labels)
+                loss.backward()
+
+                # theta <- theta - lr * grad_Loss
+                for param in model.parameters():
+                    param.data -= self.args.lr * param.grad.data
+
+                # batch loss
+                batch_loss.append(loss.item())
+
+            # epoch loss
+            epoch_loss.append(sum(batch_loss) / len(batch_loss))
+
+        # client's local update (Delta <- theta - theta_r)
+        zeta_norm = 0
+        for x, y in zip(model.state_dict().values(), model_r.state_dict().values()):
+            x -= y
+            zeta_norm += x.norm(2).item() ** 2
+        zeta_norm = zeta_norm ** (1. / 2)
+
+        return model.state_dict(), zeta_norm
+
+    def poisoned_1to7(self, model, global_round):
+        # Poisoned attack by doing gradient ASCENT
+        # ALGORITHM 1 from: https://arxiv.org/pdf/1712.07557.pdf
+
+        # Set mode to train model
+        model.train()
+        epoch_loss = []
+
+        model_r = copy.deepcopy(model)
+
+        # Set optimizer for the local updates
+        if self.args.optimizer == 'sgd':
+            optimizer = torch.optim.SGD(model.parameters(), lr=self.args.lr,
+                                        momentum=0.0)
+        elif self.args.optimizer == 'adam':
+            optimizer = torch.optim.Adam(model.parameters(), lr=self.args.lr,
+                                         weight_decay=1e-4)
+        # for each epoch...
+        for iter in range(self.args.local_ep):
+            batch_loss = []
+
+            # for each batch...
+            for batch_idx, (images, labels) in enumerate(self.trainloader):
+                images, labels = images.to(self.device), labels.to(self.device)
+
+                # change 1's to 7's
+                labels[labels == 1] = 7
+
+                # change bottom right pixel corner to white
+                images[0:len(labels), 0, 27, 27] = 2.80
+                #fig = plt.figure
+                #plt.imshow(images[0, 0], cmap='gray')
+                #plt.show()
+
+                # Compute accumulated gradients of loss
+                model.zero_grad()
+                log_probs = model(images)
+                loss = self.criterion(log_probs, labels)
+                loss.backward()
+
+                # theta <- theta - lr * grad_Loss
+                for param in model.parameters():
+                    param.data -= self.args.lr * param.grad.data
+
+                # batch loss
+                batch_loss.append(loss.item())
+
+            # epoch loss
+            epoch_loss.append(sum(batch_loss) / len(batch_loss))
+
+        # client's local update (Delta <- theta - theta_r)
+        zeta_norm = 0
+        for x, y in zip(model.state_dict().values(), model_r.state_dict().values()):
+            x -= y
+            zeta_norm += x.norm(2).item() ** 2
+        zeta_norm = zeta_norm ** (1. / 2)
+
+        return model.state_dict(), zeta_norm
+
 
     def inference(self, model):
         """ Returns the inference accuracy and loss.
@@ -397,3 +533,39 @@ def test_inference(args, model, test_dataset):
 
     accuracy = correct/total
     return accuracy, loss
+
+
+def test_inference1to7(args, model, test_dataset):
+    """ Returns the test accuracy and loss.
+    """
+
+    model.eval()
+    loss, total, correct = 0.0, 0.0, 0.0
+    ones_as_sevens = 0.0
+    nb_ones = 0.0
+
+    device = 'cuda' if args.gpu else 'cpu'
+    criterion = nn.NLLLoss().to(device)
+    testloader = DataLoader(test_dataset, batch_size=128,
+                            shuffle=False)
+
+    for batch_idx, (images, labels) in enumerate(testloader):
+        images, labels = images.to(device), labels.to(device)
+
+        # Inference
+        outputs = model(images)
+        batch_loss = criterion(outputs, labels)
+        loss += batch_loss.item()
+
+        # Prediction
+        _, pred_labels = torch.max(outputs, 1)
+        pred_labels = pred_labels.view(-1)
+        correct += torch.sum(torch.eq(pred_labels, labels)).item()
+        total += len(labels)
+
+        # Backdoor Accuracy
+        ones_as_sevens += ((pred_labels == 7) * (labels == 1)).sum()
+        nb_ones += (labels == 1).sum()
+
+    accuracy = correct/total
+    return accuracy, loss, ones_as_sevens/nb_ones

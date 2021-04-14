@@ -14,7 +14,7 @@ import torch
 from tensorboardX import SummaryWriter
 
 from options import args_parser
-from update import LocalUpdate, test_inference
+from update import LocalUpdate, test_inference, test_inference1to7
 from models import MLP, CNNMnist, CNNFashion_Mnist, CNNCifar
 from utils import get_dataset, average_weights, exp_details
 
@@ -96,7 +96,7 @@ if __name__ == '__main__':
                                       idxs=user_groups[idx], logger=logger)
 
             # Update local model idx
-            if idx < 10:
+            if idx < 30:
                 del_w, zeta = local_model.poisoned_1to7(model=copy.deepcopy(global_model), global_round=epoch)
             else:
                 del_w, zeta = local_model.participant_update_Alg2(model=copy.deepcopy(global_model), global_round=epoch)
@@ -104,7 +104,8 @@ if __name__ == '__main__':
             local_norms.append(copy.deepcopy(zeta))
 
         # median of norms
-        median_norms = np.median(local_norms)
+        median_norms = args.norm_bound #np.median(local_norms)
+        print(np.median(local_norms))
 
         # clip norms
         for i in range(len(idxs_users)):
@@ -122,9 +123,10 @@ if __name__ == '__main__':
         global_model.load_state_dict(global_weights)
 
         # test accuracy
-        test_acc, test_loss = test_inference(args, global_model, test_dataset)
+        test_acc, test_loss, backdoor = test_inference1to7(args, global_model, test_dataset)
         testing_accuracy.append(test_acc)
         print(testing_accuracy)
+        print("Backdoor Accuracy: " + str(backdoor))
 
     # save test accuracy
     np.savetxt('../save/Poisoned10_GlobalDP_{}_{}_seed{}_clip{}_scale{}.txt'.

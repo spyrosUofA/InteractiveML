@@ -9,9 +9,9 @@ def args_parser():
     parser = argparse.ArgumentParser()
 
     # Differential Privacy arguments
-    parser.add_argument('--norm_bound', type=float, default=1.0,
+    parser.add_argument('--norm_bound', type=float, default=10.0,
                         help="norm bound (S) for DP-SGD")
-    parser.add_argument('--noise_scale', type=float, default=0.2,
+    parser.add_argument('--noise_scale', type=float, default=0.0,
                         help="noise scale (sigma) for DP-SGD")
     parser.add_argument('--epsilon', type=float, default=0.0,
                         help="differential privacy target")
@@ -23,19 +23,19 @@ def args_parser():
                         help="number of rounds of training")
     parser.add_argument('--num_users', type=int, default=100,
                         help="number of users: K")
-    parser.add_argument('--frac', type=float, default=0.1,
+    parser.add_argument('--frac', type=float, default=0.3,
                         help='the fraction of clients: C')
-    parser.add_argument('--local_ep', type=int, default=10,
+    parser.add_argument('--local_ep', type=int, default=5,
                         help="the number of local epochs: E")
-    parser.add_argument('--local_bs', type=int, default=10,
+    parser.add_argument('--local_bs', type=int, default=20,
                         help="local batch size: B")
-    parser.add_argument('--lr', type=float, default=0.05,
+    parser.add_argument('--lr', type=float, default=0.1,
                         help='learning rate')
     parser.add_argument('--momentum', type=float, default=0.0,
                         help='SGD momentum (default: 0.0)')
 
     # model arguments
-    parser.add_argument('--model', type=str, default='mlp', help='model name')
+    parser.add_argument('--model', type=str, default='cnn', help='model name')
     parser.add_argument('--kernel_num', type=int, default=9,
                         help='number of each kind of kernel')
     parser.add_argument('--kernel_sizes', type=str, default='3,4,5',
