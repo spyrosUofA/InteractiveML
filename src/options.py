@@ -9,7 +9,7 @@ def args_parser():
     parser = argparse.ArgumentParser()
 
     # Differential Privacy arguments
-    parser.add_argument('--norm_bound', type=float, default=10.0,
+    parser.add_argument('--norm_bound', type=float, default=3.2,
                         help="norm bound (S) for DP-SGD")
     parser.add_argument('--noise_scale', type=float, default=0.0,
                         help="noise scale (sigma) for DP-SGD")
@@ -17,13 +17,15 @@ def args_parser():
                         help="differential privacy target")
     parser.add_argument('--delta', type=float, default=0.0,
                         help="differential privacy threshold")
+    parser.add_argument('--nb_attackers', type=int, default=1,
+                        help="differential privacy threshold")
 
     # federated arguments (Notation for the arguments followed from paper)
     parser.add_argument('--epochs', type=int, default=20,
                         help="number of rounds of training")
     parser.add_argument('--num_users', type=int, default=100,
                         help="number of users: K")
-    parser.add_argument('--frac', type=float, default=0.3,
+    parser.add_argument('--frac', type=float, default=0.1,
                         help='the fraction of clients: C')
     parser.add_argument('--local_ep', type=int, default=5,
                         help="the number of local epochs: E")
@@ -61,7 +63,7 @@ def args_parser():
                         to a specific GPU ID. Default set to use CPU.")
     parser.add_argument('--optimizer', type=str, default='sgd', help="type \
                         of optimizer")
-    parser.add_argument('--iid', type=int, default=1,
+    parser.add_argument('--iid', type=int, default=0,
                         help='Default set to IID. Set to 0 for non-IID.')
     parser.add_argument('--unequal', type=int, default=0,
                         help='whether to use unequal data splits for  \
