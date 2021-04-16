@@ -96,17 +96,17 @@ if __name__ == '__main__':
                                       idxs=user_groups[idx], logger=logger)
 
             # Update local model idx
-            del_w, zeta = local_model.participant_update_Alg2(model=copy.deepcopy(global_model), global_round=epoch)
+            del_w, zeta = local_model.update_weights(model=copy.deepcopy(global_model), change=1)
             local_del_w.append(copy.deepcopy(del_w))
             local_norms.append(copy.deepcopy(zeta))
 
         # median of norms
-        median_norms = np.median(local_norms)
+        median_norms = 100 #np.median(local_norms)
 
         # clip norms
-        for i in range(len(idxs_users)):
-            for param in local_del_w[i].values():
-                param /= max(1, local_norms[i] / median_norms)
+        #for i in range(len(idxs_users)):
+        #    for param in local_del_w[i].values():
+        #        param /= max(1, local_norms[i] / median_norms)
 
         # average local model weights
         average_del_w = average_weights(local_del_w)
@@ -115,7 +115,8 @@ if __name__ == '__main__':
         # w_{t+1} = w_{t} + avg(del_w1 + del_w2 + ... + del_wc) + Noise
         for param, param_del_w in zip(global_weights.values(), average_del_w.values()):
             param += param_del_w
-            param += torch.randn(param.size()) * args.noise_scale * median_norms / (len(idxs_users) ** 0.5)
+            #param += torch.randn(param.size()) * args.noise_scale * median_norms / (len(idxs_users) ** 0.5)
+            #print(param.shape)
         global_model.load_state_dict(global_weights)
 
         # test accuracy
@@ -126,4 +127,3 @@ if __name__ == '__main__':
     # save test accuracy
     np.savetxt('../save/GlobalDP_{}_{}_seed{}_clip{}_scale{}.txt'.
                  format(args.dataset, args.model, args.seed, args.norm_bound, args.noise_scale), testing_accuracy)
-

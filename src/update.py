@@ -57,6 +57,10 @@ class LocalUpdate(object):
         return trainloader, validloader, testloader
 
     def update_weights(self, model, change=1):
+        # ALGORITHM 1 from: https://arxiv.org/pdf/1712.07557.pdf
+        # change=0 returns: local weights, L2 norm of local weights
+        # change=1 returns: local weight UPDATES, L2 norm of local weight UPDATES
+
         # Set mode to train model
         model.train()
         epoch_loss = []
@@ -249,8 +253,8 @@ class LocalUpdate(object):
         return model.state_dict(), sum(epoch_loss) / len(epoch_loss)
 
     def participant_update_Alg2(self, model, global_round):
-        # ALGORITHM 2 (typo???) from: https://arxiv.org/pdf/2009.03561.pdf
-        # ALGORITHM 1 from: https://arxiv.org/pdf/1712.07557.pdf
+        # ALGORITHM 2 from: https://arxiv.org/pdf/2009.03561.pdf
+
 
         # Set mode to train model
         model.train()
@@ -279,8 +283,19 @@ class LocalUpdate(object):
                 loss = self.criterion(log_probs, labels)
                 loss.backward()
 
-                # theta <- theta - lr * grad_Loss
+                # (1) theta <- theta - lr * grad_Loss
                 optimizer.step()
+
+                # (2) delta = theta - theta_r
+                del_norm = 0
+                for x, y in zip(model.state_dict().values(), model_r.state_dict().values()):
+                    delta = x - y
+                    del_norm += delta.norm(2).item() ** 2
+                del_norm = del_norm ** (1. / 2)
+
+                # (3) Clip update
+                for x, y in zip(model.state_dict().values(), model_r.state_dict().values()):
+                    x = y + (x-y) #* min(1, self.args.norm_bound / del_norm)
 
                 # batch loss
                 batch_loss.append(loss.item())
@@ -288,15 +303,11 @@ class LocalUpdate(object):
             # epoch loss
             epoch_loss.append(sum(batch_loss) / len(batch_loss))
 
-        # client's local update (Delta <- theta - theta_r)
-        zeta_norm = 0
+        # returns difference
         for x, y in zip(model.state_dict().values(), model_r.state_dict().values()):
-            x -= y
-            #print(x.shape)
-            zeta_norm += x.norm(2).item() ** 2
-        zeta_norm = zeta_norm ** (1. / 2)
+            x = x - y
 
-        return model.state_dict(), zeta_norm
+        return model.state_dict(), del_norm
 
     def poisoned_SGA(self, model, change=1):
         # Poisoned attack by doing gradient ASCENT
@@ -353,9 +364,7 @@ class LocalUpdate(object):
 
         return model.state_dict(), zeta_norm
 
-    def poisoned_Backdoor(self, model, global_round):
-        # Poisoned attack by doing gradient ASCENT
-        # ALGORITHM 1 from: https://arxiv.org/pdf/1712.07557.pdf
+    def poisoned_Backdoor(self, model):
 
         # Set mode to train model
         model.train()
@@ -413,9 +422,7 @@ class LocalUpdate(object):
 
         return model.state_dict(), zeta_norm
 
-    def poisoned_1to7(self, model, global_round):
-        # Poisoned attack by doing gradient ASCENT
-        # ALGORITHM 1 from: https://arxiv.org/pdf/1712.07557.pdf
+    def poisoned_1to7(self, model, change=1):
 
         # Set mode to train model
         model.train()
@@ -441,21 +448,12 @@ class LocalUpdate(object):
                 # change 1's to 7's
                 labels[labels == 1] = 7
 
-                # change bottom right pixel corner to white
-                #images[0:len(labels), 0, 27, 27] = 2.80
-                #fig = plt.figure
-                #plt.imshow(images[0, 0], cmap='gray')
-                #plt.show()
-
                 # Compute accumulated gradients of loss
                 model.zero_grad()
                 log_probs = model(images)
                 loss = self.criterion(log_probs, labels)
                 loss.backward()
-
-                # theta <- theta - lr * grad_Loss
-                for param in model.parameters():
-                    param.data -= self.args.lr * param.grad.data
+                optimizer.step()
 
                 # batch loss
                 batch_loss.append(loss.item())
@@ -463,10 +461,10 @@ class LocalUpdate(object):
             # epoch loss
             epoch_loss.append(sum(batch_loss) / len(batch_loss))
 
-        # client's local update (Delta <- theta - theta_r)
+        # calculate norm, return weights (or update)
         zeta_norm = 0
         for x, y in zip(model.state_dict().values(), model_r.state_dict().values()):
-            x -= y
+            x -= y*change
             zeta_norm += x.norm(2).item() ** 2
         zeta_norm = zeta_norm ** (1. / 2)
 
@@ -554,12 +552,16 @@ def test_inference1to7(args, model, test_dataset):
         correct += torch.sum(torch.eq(pred_labels, labels)).item()
         total += len(labels)
 
-        # Backdoor Accuracy
+        # Backdoor Accuracy?
+        print(pred_labels)
+        print(labels)
+        print(((pred_labels == 7) * (labels == 1)))
         ones_as_sevens += ((pred_labels == 7) * (labels == 1)).sum()
         nb_ones += (labels == 1).sum()
+        print(ones_as_sevens)
 
     accuracy = correct/total
-    return accuracy, loss, ones_as_sevens/nb_ones
+    return accuracy, loss, float(ones_as_sevens/nb_ones)
 
 
 def test_backdoor_pixel(args, model, test_dataset):

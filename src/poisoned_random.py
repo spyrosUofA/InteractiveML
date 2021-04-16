@@ -22,7 +22,7 @@ import statistics
 import matplotlib.pyplot as plt
 
 
-def poisoned_pixel_NoDefense(seed=1):
+def poisoned_random_NoDefense(seed=1):
     start_time = time.time()
 
     # define paths
@@ -84,7 +84,6 @@ def poisoned_pixel_NoDefense(seed=1):
         m = max(int(args.frac * args.num_users), 1)
         idxs_users = np.random.choice(range(args.num_users), m, replace=False)
 
-
         # Adversary updates
         print("Evil")
         for idx in idxs_users[0:args.nb_attackers]:
@@ -92,7 +91,7 @@ def poisoned_pixel_NoDefense(seed=1):
             local_model = LocalUpdate(args=args, dataset=train_dataset,
                                       idxs=user_groups[idx], logger=logger)
 
-            del_w, zeta = local_model.poisoned_SGA(model=copy.deepcopy(global_model), change=0)
+            del_w, zeta = local_model.poisoned_SGA(model=copy.deepcopy(global_model), change=1)
             local_del_w.append(copy.deepcopy(del_w))
             local_norms.append(copy.deepcopy(zeta))
             print(zeta)
@@ -109,12 +108,10 @@ def poisoned_pixel_NoDefense(seed=1):
             local_norms.append(copy.deepcopy(zeta))
             print(zeta)
 
-
         # average local updates
         average_del_w = average_weights(local_del_w)
 
-        # Update model
-        # w_{t+1} = w_{t} + avg(del_w1 + del_w2 + ... + del_wc)
+        # Update global model: w_{t+1} = w_{t} + average_del_w
         for param, param_del_w in zip(global_weights.values(), average_del_w.values()):
             param += param_del_w
         global_model.load_state_dict(global_weights)
@@ -127,10 +124,10 @@ def poisoned_pixel_NoDefense(seed=1):
         print(testing_accuracy)
 
     # save test accuracy
-    np.savetxt('../save/PoisonModel_NoDefense_{}_{}_seed{}.txt'.
-                 format(args.dataset, args.model, seed, args.norm_bound, args.noise_scale), testing_accuracy)
+    np.savetxt('../save/RandomAttack/NoDefense_{}_{}_seed{}.txt'.
+                 format(args.dataset, args.model, s), testing_accuracy)
 
-def poisoned_pixel_CDP(seed=1):
+def poisoned_random_CDP(seed=1):
     # Central DP to protect against attackers
 
     start_time = time.time()
@@ -195,21 +192,17 @@ def poisoned_pixel_CDP(seed=1):
         idxs_users = np.random.choice(range(args.num_users), m, replace=False)
 
 
-        # Poisonous updates
+        # Adversaries' update
         for idx in idxs_users[0:args.nb_attackers]:
-            local_model = LocalUpdate(args=args, dataset=train_dataset,
-                                      idxs=user_groups[idx], logger=logger)
-
+            local_model = LocalUpdate(args=args, dataset=train_dataset, idxs=user_groups[idx], logger=logger)
             del_w, zeta = local_model.poisoned_SGA(model=copy.deepcopy(global_model), change=1)
             local_del_w.append(copy.deepcopy(del_w))
             local_norms.append(copy.deepcopy(zeta))
 
-        # Non-adversarial updates
+        # Non-adversary updates
         for idx in idxs_users[args.nb_attackers:]:
-            local_model = LocalUpdate(args=args, dataset=train_dataset,
-                                      idxs=user_groups[idx], logger=logger)
-
-            del_w, zeta = local_model.participant_update_Alg2(model=copy.deepcopy(global_model), global_round=epoch)
+            local_model = LocalUpdate(args=args, dataset=train_dataset, idxs=user_groups[idx], logger=logger)
+            del_w, zeta = local_model.update_weights(model=copy.deepcopy(global_model), change=1)
             local_del_w.append(copy.deepcopy(del_w))
             local_norms.append(copy.deepcopy(zeta))
 
@@ -217,15 +210,15 @@ def poisoned_pixel_CDP(seed=1):
         median_norms = args.norm_bound #np.median(local_norms)  #args.norm_bound
         print(median_norms)
 
-        # clip norms
+        # clip weight updates
         for i in range(len(idxs_users)):
             for param in local_del_w[i].values():
                 param /= max(1, local_norms[i] / median_norms)
 
-        # average local model weights
+        # average the clipped weight updates
         average_del_w = average_weights(local_del_w)
 
-        # Update model and add noise
+        # Update global model using clipped weight updates, and add noise
         # w_{t+1} = w_{t} + avg(del_w1 + del_w2 + ... + del_wc) + Noise
         for param, param_del_w in zip(global_weights.values(), average_del_w.values()):
             param += param_del_w
@@ -240,22 +233,13 @@ def poisoned_pixel_CDP(seed=1):
         print(testing_accuracy)
 
     # save test accuracy
-    np.savetxt('../save/PoisonModel_GDP_{}_{}_seed{}_clip{}_scale{}.txt'.
-                 format(args.dataset, args.model, seed, args.norm_bound, args.noise_scale),
+    np.savetxt('../save/RandomAttack/GDP_{}_{}_seed{}_clip{}_scale{}.txt'.
+                 format(args.dataset, args.model, s, args.norm_bound, args.noise_scale),
                testing_accuracy)
 
 
 if __name__ == '__main__':
-    poisoned_pixel_CDP(seed=1)
 
-    #poisoned_pixel_NoDefense(seed=2)
-    poisoned_pixel_CDP(seed=2)
-
-    #poisoned_pixel_NoDefense(seed=3)
-    poisoned_pixel_CDP(seed=3)
-
-    #poisoned_pixel_NoDefense(seed=4)
-    poisoned_pixel_CDP(seed=4)
-
-    poisoned_pixel_NoDefense(seed=5)
-    poisoned_pixel_CDP(seed=5)
+    for s in range(5):
+        poisoned_random_NoDefense(seed=(s+1))
+        #poisoned_random_CDP(seed=(s+1))

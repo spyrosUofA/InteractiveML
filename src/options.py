@@ -11,7 +11,7 @@ def args_parser():
     # Differential Privacy arguments
     parser.add_argument('--norm_bound', type=float, default=3.2,
                         help="norm bound (S) for DP-SGD")
-    parser.add_argument('--noise_scale', type=float, default=0.0,
+    parser.add_argument('--noise_scale', type=float, default=0.01,
                         help="noise scale (sigma) for DP-SGD")
     parser.add_argument('--epsilon', type=float, default=0.0,
                         help="differential privacy target")
