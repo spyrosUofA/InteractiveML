@@ -97,7 +97,7 @@ class LocalUpdate(object):
 
         return model.state_dict(), zeta_norm
 
-    def dp_sgd(self, model, global_round, norm_bound, noise_scale):
+    def dp_sgd(self, model, norm_bound, noise_scale):
         #################
         ## ALGORITHM 1 ##
         #################
@@ -137,13 +137,12 @@ class LocalUpdate(object):
 
                 # Compute L2^2 norm for each g_i
                 g_norms = torch.zeros(labels.shape)
-
                 for name, param in model.named_parameters():
                     g_norms += param.grad1.flatten(1).norm(2, dim=1) ** 2
 
                 # Clipping factor =  min(1, C / norm(gi)) ....OR.... max(1, norm(gi) / C)
                 clip_factor = torch.clamp(g_norms ** 0.5 / norm_bound, min=1)
-                #print(np.percentile(g_norms ** 0.5, [25, 50, 75]))
+                #print(np.median(g_norms ** 0.5))
 
                 # Clip each gradient
                 for param in model.parameters():
@@ -222,7 +221,6 @@ class LocalUpdate(object):
                 # Clipping factor =  min(1, C / norm(gi)) ....OR.... max(1, norm(gi) / C)
                 clip_factor = torch.clamp(g_norms ** 0.5 / norm_bound, min=1)
                 #print(np.percentile(g_norms ** 0.5, [25, 50, 75]))
-                print(g_norms ** 0.5)
 
                 # Clip each gradient
                 for param in model.parameters():

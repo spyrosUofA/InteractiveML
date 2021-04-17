@@ -24,7 +24,7 @@ jpeg("./plotting/RandomAttack.jpg")
 plot(0:20, no_defense$V1, xlab = "Communication Round", ylab = "Test Accuracy", ylim = c(0,1), type="l")
 lines(0:20, norm_bound$V1, col="red")
 lines(0:20, GDP_c3.2_s0.01$V1, col="green")
-title(main="Poisoning Attack: 1 random gradient each round")
+title(main="1 random poisoning attack gradient each round")
 legend("bottomright", c("None", "Norm Bounding", "GDP"), col = c("black", "red", "green"), lty=c(1,1), title = "Defense")
 
 dev.off()
