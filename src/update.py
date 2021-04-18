@@ -362,7 +362,85 @@ class LocalUpdate(object):
 
         return model.state_dict(), zeta_norm
 
-    def poisoned_Backdoor(self, model):
+
+
+
+    def poisoned_ldp(self, model, norm_bound, noise_scale):
+        # Set mode to train model
+        model.train()
+        epoch_loss = []
+
+        model_dummy = copy.deepcopy(model)
+
+        # Set optimizer for the local updates
+        if self.args.optimizer == 'sgd':
+            optimizer = torch.optim.SGD(model.parameters(), lr=self.args.lr, momentum=0.0)
+        elif self.args.optimizer == 'adam':
+            optimizer = torch.optim.Adam(model.parameters(), lr=self.args.lr, weight_decay=1e-4)
+
+        # for each epoch (1...E)
+        for iter in range(self.args.local_ep):
+
+            batch_loss = []
+
+            # for each batch
+            for batch_idx, (images, labels) in enumerate(self.trainloader):
+
+                # label everything as 0
+                labels *= 0
+
+                # add hooks for per sample gradients
+                model.zero_grad()
+                autograd_hacks.add_hooks(model)
+
+                # Forward pass, compute loss, backwards pass
+                log_probs = model(torch.FloatTensor(images))
+                loss = self.criterion(log_probs, labels)
+                loss.backward(retain_graph=True)
+
+                # Per-sample gradients g_i
+                autograd_hacks.compute_grad1(model)
+                autograd_hacks.disable_hooks()
+
+                # Compute L2^2 norm for each g_i
+                g_norms = torch.zeros(labels.shape)
+                for name, param in model.named_parameters():
+                    g_norms += param.grad1.flatten(1).norm(2, dim=1) ** 2
+
+                # Clipping factor =  min(1, C / norm(gi)) ....OR.... max(1, norm(gi) / C)
+                clip_factor = torch.clamp(g_norms ** 0.5 / norm_bound, min=1)
+                #print(np.median(g_norms ** 0.5))
+
+                # Clip each gradient
+                for param in model.parameters():
+                    for i in range(len(labels)):
+                        param.grad1.data[i] /= clip_factor[i]
+
+                # Noisy batch update
+                for param in model.parameters():
+                    # batch average of clipped gradients
+                    param.grad = param.grad1.mean(dim=0)
+
+                    # add noise
+                    param.grad += torch.randn(param.size()) * norm_bound * noise_scale / len(labels)
+
+                    # update weights
+                    param.data -= self.args.lr * param.grad.data
+
+                # revert model back to proper format (per-sample gradients messed it up a bit)
+                model_dummy.load_state_dict(model.state_dict())
+                model = copy.deepcopy(model_dummy)
+
+                # Record loss
+                batch_loss.append(loss.item())
+
+            # Append loss, go to next epoch...
+            epoch_loss.append(sum(batch_loss) / len(batch_loss))
+
+        return model.state_dict(), sum(epoch_loss) / len(epoch_loss)
+
+
+    def pixel_attack(self, model, epochs):
 
         # Set mode to train model
         model.train()
@@ -378,18 +456,17 @@ class LocalUpdate(object):
             optimizer = torch.optim.Adam(model.parameters(), lr=self.args.lr,
                                          weight_decay=1e-4)
         # for each epoch...
-        for iter in range(self.args.local_ep):
+        for iter in range(epochs):
             batch_loss = []
 
             # for each batch...
             for batch_idx, (images, labels) in enumerate(self.trainloader):
                 images, labels = images.to(self.device), labels.to(self.device)
 
-                # change labels to 0
-                labels *= 0
-
-                # change bottom right pixel corner to white
-                images[0:len(labels), 0, 27, 27] = 2.80
+                # images/labels to change
+                to_change = np.random.choice(range(len(labels)), len(labels) // 2, replace=False)
+                labels[to_change] *= 0  # label as 0
+                images[to_change, 0, 27, 27] = 2.80  # change bottom right pixel
                 #fig = plt.figure
                 #plt.imshow(images[0, 0], cmap='gray')
                 #plt.show()
@@ -414,11 +491,89 @@ class LocalUpdate(object):
         zeta_norm = 0
         for x, y in zip(model.state_dict().values(), model_r.state_dict().values()):
             x -= y
-            x *= self.args.num_users / 1.0 * self.args.frac
+            #x *= self.args.num_users / 1.0 * self.args.frac
             zeta_norm += x.norm(2).item() ** 2
         zeta_norm = zeta_norm ** (1. / 2)
 
         return model.state_dict(), zeta_norm
+
+    def pixel_ldp(self, model, norm_bound, noise_scale):
+
+        # Set mode to train model
+        model.train()
+        epoch_loss = []
+
+        model_dummy = copy.deepcopy(model)
+
+        # Set optimizer for the local updates
+        if self.args.optimizer == 'sgd':
+            optimizer = torch.optim.SGD(model.parameters(), lr=self.args.lr, momentum=0.0)
+        elif self.args.optimizer == 'adam':
+            optimizer = torch.optim.Adam(model.parameters(), lr=self.args.lr, weight_decay=1e-4)
+
+        # for each epoch (1...E)
+        for iter in range(self.args.local_ep):
+
+            batch_loss = []
+
+            # for each batch
+            for batch_idx, (images, labels) in enumerate(self.trainloader):
+
+                # images/labels to change
+                to_change = np.random.choice(range(len(labels)), len(labels) // 2, replace=False)
+                labels[to_change] *= 0  # label as 0
+                images[to_change, 0, 27, 27] = 2.80  # change bottom right pixel
+
+                # add hooks for per sample gradients
+                model.zero_grad()
+                autograd_hacks.add_hooks(model)
+
+                # Forward pass, compute loss, backwards pass
+                log_probs = model(torch.FloatTensor(images))
+                loss = self.criterion(log_probs, labels)
+                loss.backward(retain_graph=True)
+
+                # Per-sample gradients g_i
+                autograd_hacks.compute_grad1(model)
+                autograd_hacks.disable_hooks()
+
+                # Compute L2^2 norm for each g_i
+                g_norms = torch.zeros(labels.shape)
+                for name, param in model.named_parameters():
+                    g_norms += param.grad1.flatten(1).norm(2, dim=1) ** 2
+
+                # Clipping factor =  min(1, C / norm(gi)) ....OR.... max(1, norm(gi) / C)
+                clip_factor = torch.clamp(g_norms ** 0.5 / norm_bound, min=1)
+                #print(np.median(g_norms ** 0.5))
+
+                # Clip each gradient
+                for param in model.parameters():
+                    for i in range(len(labels)):
+                        param.grad1.data[i] /= clip_factor[i]
+
+                # Noisy batch update
+                for param in model.parameters():
+                    # batch average of clipped gradients
+                    param.grad = param.grad1.mean(dim=0)
+
+                    # add noise
+                    param.grad += torch.randn(param.size()) * norm_bound * noise_scale / len(labels)
+
+                    # update weights
+                    param.data -= self.args.lr * param.grad.data
+
+                # revert model back to proper format (per-sample gradients messed it up a bit)
+                model_dummy.load_state_dict(model.state_dict())
+                model = copy.deepcopy(model_dummy)
+
+                # Record loss
+                batch_loss.append(loss.item())
+
+            # Append loss, go to next epoch...
+            epoch_loss.append(sum(batch_loss) / len(batch_loss))
+
+        return model.state_dict(), sum(epoch_loss) / len(epoch_loss)
+
 
     def poisoned_1to7(self, model, change=1):
 

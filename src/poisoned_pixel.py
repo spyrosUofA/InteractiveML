@@ -22,7 +22,7 @@ import statistics
 import matplotlib.pyplot as plt
 
 
-def poisoned_pixel_NoDefense():
+def poisoned_pixel_NoDefense(nb_attackers, seed=1):
     start_time = time.time()
 
     # define paths
@@ -33,8 +33,8 @@ def poisoned_pixel_NoDefense():
     exp_details(args)
 
     # set seed
-    torch.manual_seed(args.seed)
-    np.random.seed(args.seed)
+    torch.manual_seed(seed)
+    np.random.seed(seed)
 
     # device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -87,28 +87,23 @@ def poisoned_pixel_NoDefense():
 
         # Adversary updates
         print("Evil")
-        for idx in idxs_users[0:args.nb_attackers]:
+        for idx in idxs_users[0:nb_attackers]:
             print(idx)
-            local_model = LocalUpdate(args=args, dataset=train_dataset,
-                                      idxs=user_groups[idx], logger=logger)
-
-            del_w, zeta = local_model.poisoned_Backdoor(model=copy.deepcopy(global_model), global_round=epoch)
+            local_model = LocalUpdate(args=args, dataset=train_dataset, idxs=user_groups[idx], logger=logger)
+            del_w, zeta = local_model.pixel_attack(model=copy.deepcopy(global_model), epochs=20)
             local_del_w.append(copy.deepcopy(del_w))
             local_norms.append(copy.deepcopy(zeta))
             print(zeta)
 
         # Non-adversarial updates
         print("Good")
-        for idx in idxs_users[args.nb_attackers:]:
+        for idx in idxs_users[nb_attackers:]:
             print(idx)
-            local_model = LocalUpdate(args=args, dataset=train_dataset,
-                                      idxs=user_groups[idx], logger=logger)
-
+            local_model = LocalUpdate(args=args, dataset=train_dataset, idxs=user_groups[idx], logger=logger)
             del_w, zeta = local_model.update_weights(model=copy.deepcopy(global_model), change=1)
             local_del_w.append(copy.deepcopy(del_w))
             local_norms.append(copy.deepcopy(zeta))
             print(zeta)
-
 
         # average local updates
         average_del_w = average_weights(local_del_w)
@@ -129,12 +124,16 @@ def poisoned_pixel_NoDefense():
         print(backdoor_accuracy)
 
     # save test accuracy
-    np.savetxt('../save/PoisonedPixel_NoDefense_{}_{}_seed{}_clip{}_scale{}.txt'.
-                 format(args.dataset, args.model, args.seed, args.norm_bound, args.noise_scale), testing_accuracy)
+    np.savetxt('../save/PixelAttack/TestAcc/NoDefense_{}_{}_attackers{}_seed{}.txt'.
+               format(args.dataset, args.model, nb_attackers, s), testing_accuracy)
 
-def poisoned_pixel_CDP():
-    # Central DP to protect against attackers
+    np.savetxt('../save/PixelAttack/BackdoorAcc/NoDefense_{}_{}_attackers{}_seed{}.txt'.
+               format(args.dataset, args.model, nb_attackers, s), backdoor_accuracy)
 
+
+
+
+def poisoned_pixel_CDP(norm_bound, noise_scale, nb_attackers, seed=1):
     start_time = time.time()
 
     # define paths
@@ -145,8 +144,8 @@ def poisoned_pixel_CDP():
     exp_details(args)
 
     # set seed
-    torch.manual_seed(args.seed)
-    np.random.seed(args.seed)
+    torch.manual_seed(seed)
+    np.random.seed(seed)
 
     # device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -198,39 +197,39 @@ def poisoned_pixel_CDP():
 
 
         # Poisonous updates
-        for idx in idxs_users[0:args.nb_attackers]:
-            local_model = LocalUpdate(args=args, dataset=train_dataset,
-                                      idxs=user_groups[idx], logger=logger)
-
-            del_w, zeta = local_model.poisoned_Backdoor(model=copy.deepcopy(global_model), global_round=epoch)
+        for idx in idxs_users[0:nb_attackers]:
+            local_model = LocalUpdate(args=args, dataset=train_dataset, idxs=user_groups[idx], logger=logger)
+            del_w, zeta = local_model.pixel_attack(model=copy.deepcopy(global_model), epochs=20)
             local_del_w.append(copy.deepcopy(del_w))
             local_norms.append(copy.deepcopy(zeta))
+            print("evil")
+            print(zeta)
 
         # Non-adversarial updates
-        for idx in idxs_users[args.nb_attackers:]:
-            local_model = LocalUpdate(args=args, dataset=train_dataset,
-                                      idxs=user_groups[idx], logger=logger)
-
-            del_w, zeta = local_model.participant_update_Alg2(model=copy.deepcopy(global_model), global_round=epoch)
+        for idx in idxs_users[nb_attackers:]:
+            local_model = LocalUpdate(args=args, dataset=train_dataset, idxs=user_groups[idx], logger=logger)
+            del_w, zeta = local_model.update_weights(model=copy.deepcopy(global_model), change=1)
             local_del_w.append(copy.deepcopy(del_w))
             local_norms.append(copy.deepcopy(zeta))
+            print("good")
+            print(zeta)
 
         # norm bound (e.g. median of norms)
-        median_norms = args.norm_bound #np.median(local_norms)
+        #norm_bound = min(norm_bound, np.median(local_norms))
 
-        # clip norms
+        # clip updates
         for i in range(len(idxs_users)):
             for param in local_del_w[i].values():
-                param /= max(1, local_norms[i] / median_norms)
+                param /= max(1, local_norms[i] / norm_bound)
 
-        # average local model weights
+        # average local model updates
         average_del_w = average_weights(local_del_w)
 
         # Update model and add noise
         # w_{t+1} = w_{t} + avg(del_w1 + del_w2 + ... + del_wc) + Noise
         for param, param_del_w in zip(global_weights.values(), average_del_w.values()):
             param += param_del_w
-            param += torch.randn(param.size()) * args.noise_scale * median_norms / (len(idxs_users) ** 0.5)
+            param += torch.randn(param.size()) * noise_scale * norm_bound / len(idxs_users)
         global_model.load_state_dict(global_weights)
 
         # test accuracy
@@ -243,14 +242,19 @@ def poisoned_pixel_CDP():
         print(backdoor_accuracy)
 
     # save test accuracy
-    np.savetxt('../save/PoisonedPixel_GDP_{}_{}_seed{}_clip{}_scale{}.txt'.
-                 format(args.dataset, args.model, args.seed, args.norm_bound, args.noise_scale),
-               [testing_accuracy, backdoor_accuracy])
+    np.savetxt('../save/PixelAttack/TestAcc/GDP_{}_{}_clip{}_scale{}_attackers{}_seed{}.txt'.
+               format(args.dataset, args.model, norm_bound, noise_scale, nb_attackers, s),
+               testing_accuracy)
 
-
+    np.savetxt('../save/PixelAttack/BackdoorAcc/GDP_{}_{}_clip{}_scale{}_attackers{}_seed{}.txt'.
+               format(args.dataset, args.model, norm_bound, noise_scale, nb_attackers, s),
+               backdoor_accuracy)
 
 
 if __name__ == '__main__':
-    poisoned_pixel_NoDefense()
-    poisoned_pixel_CDP()
 
+    nb_attackers = 2
+
+    for s in range(5):
+        #poisoned_pixel_NoDefense(nb_attackers=nb_attackers, seed=s)
+        poisoned_pixel_CDP(norm_bound=2.2, noise_scale=0.1, nb_attackers=nb_attackers, seed=s)

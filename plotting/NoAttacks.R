@@ -39,7 +39,7 @@ lines(0:20, gdp_c3.2_s0.05$V1, col="green")
 lines(0:20, gdp_c2.2_s0.1$V1, col="green", lty=2)
 
 title(main="Federated Learning")
-legend("bottomright", c("Non-Private", "LDP(e1,d1)", "LDP(e2,d2)", "GDP1", "GDP2"),
+legend("bottomright", c("Non-Private", "LDP(e1,d1)", "LDP(e2,d2)", "CDP1", "CDP2"),
         col = c("black", "red", "red", "green", "green"), lty=c(1,1,2,1,2))
 
 dev.off()
