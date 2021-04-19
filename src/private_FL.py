@@ -171,8 +171,7 @@ def local_DP_FL(norm_bound, noise_scale, seed=1):
         # Local Client Updates
         for idx in idxs_users:
             local_model = LocalUpdate(args=args, dataset=train_dataset, idxs=user_groups[idx], logger=logger)
-            w, _ = local_model.dp_sgd(model=copy.deepcopy(global_model),
-                                          norm_bound=norm_bound, noise_scale=noise_scale)
+            w, _ = local_model.dp_sgd(model=copy.deepcopy(global_model), norm_bound=norm_bound, noise_scale=noise_scale)
             local_w.append(w)
 
         # update global weights
@@ -304,9 +303,9 @@ if __name__ == '__main__':
         ## Local DP
         #local_DP_FL(norm_bound=3.2, noise_scale=0.5, seed=s)
         #local_DP_FL(norm_bound=1.6, noise_scale=0.25, seed=s)
+        local_DP_FL(norm_bound=3.2, noise_scale=0.1, seed=s)
 
         ## Central DP
         #central_DP_FL(norm_bound=3.2, noise_scale=0.05, seed=s)
-        central_DP_FL(norm_bound=2.2, noise_scale=0.1, seed=s)
-
+        #central_DP_FL(norm_bound=2.2, noise_scale=0.1, seed=s)
         #central_DP_FL(norm_bound=3.2, noise_scale=0.5, seed=s)

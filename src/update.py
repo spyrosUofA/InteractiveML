@@ -56,6 +56,7 @@ class LocalUpdate(object):
                                 batch_size=int(len(idxs_test)/10), shuffle=False)
         return trainloader, validloader, testloader
 
+    # LOCAL UPDATES
     def update_weights(self, model, change=1):
         # ALGORITHM 1 from: https://arxiv.org/pdf/1712.07557.pdf
         # change=0 returns: local weights, L2 norm of local weights
@@ -102,6 +103,8 @@ class LocalUpdate(object):
         ## ALGORITHM 1 ##
         #################
 
+        S = norm_bound
+
         # Set mode to train model
         model.train()
         epoch_loss = []
@@ -140,9 +143,11 @@ class LocalUpdate(object):
                 for name, param in model.named_parameters():
                     g_norms += param.grad1.flatten(1).norm(2, dim=1) ** 2
 
+                #print(np.median(g_norms**0.5))
+
                 # Clipping factor =  min(1, C / norm(gi)) ....OR.... max(1, norm(gi) / C)
+                norm_bound = min(S, np.median(g_norms ** 0.5))
                 clip_factor = torch.clamp(g_norms ** 0.5 / norm_bound, min=1)
-                #print(np.median(g_norms ** 0.5))
 
                 # Clip each gradient
                 for param in model.parameters():
@@ -172,85 +177,7 @@ class LocalUpdate(object):
 
         return model.state_dict(), sum(epoch_loss) / len(epoch_loss)
 
-    def dp_sgd_accountant(self, model, global_round, norm_bound, noise_scale, epsilon, delta, m):
-        #################
-        ## ALGORITHM 1 ##
-        #################
-
-        # Set mode to train model
-        model.train()
-        epoch_loss = []
-
-        model_dummy = copy.deepcopy(model)
-
-        # Set optimizer for the local updates
-        if self.args.optimizer == 'sgd':
-            optimizer = torch.optim.SGD(model.parameters(), lr=self.args.lr, momentum=0.0)
-        elif self.args.optimizer == 'adam':
-            optimizer = torch.optim.Adam(model.parameters(), lr=self.args.lr, weight_decay=1e-4)
-
-        # for each epoch (1...E)
-        for iter in range(self.args.local_ep):
-
-            batch_loss = []
-
-            # for each batch
-            for batch_idx, (images, labels) in enumerate(self.trainloader):
-
-                # add hooks for per sample gradients
-                model.zero_grad()
-                autograd_hacks.add_hooks(model)
-
-                # Forward pass, compute loss, backwards pass
-                log_probs = model(torch.FloatTensor(images))
-                loss = self.criterion(log_probs, labels)
-                loss.backward(retain_graph=True)
-
-                # Per-sample gradients g_i
-                autograd_hacks.compute_grad1(model)
-                autograd_hacks.disable_hooks()
-
-                # Compute L2^2 norm for each g_i
-                g_norms = torch.zeros(labels.shape)
-                for name, param in model.named_parameters():
-                    if 'bias' not in name:
-                        g_norms += param.grad1.data.norm(2, dim=(1, 2)) ** 2
-                    else:
-                        g_norms += param.grad1.data.norm(2, dim=1) ** 2
-
-                # Clipping factor =  min(1, C / norm(gi)) ....OR.... max(1, norm(gi) / C)
-                clip_factor = torch.clamp(g_norms ** 0.5 / norm_bound, min=1)
-                #print(np.percentile(g_norms ** 0.5, [25, 50, 75]))
-
-                # Clip each gradient
-                for param in model.parameters():
-                    for i in range(len(labels)):
-                        param.grad1.data[i] /= clip_factor[i]
-
-                # Noisy batch update
-                for param in model.parameters():
-                    # batch average of clipped gradients
-                    param.grad = param.grad1.mean(dim=0)
-
-                    # add noise
-                    param.grad += torch.randn(param.size()) * norm_bound * noise_scale / len(labels)
-
-                    # update weights
-                    param.data -= self.args.lr * param.grad.data
-
-                # revert model back to proper format (per-sample gradients messed it up a bit)
-                model_dummy.load_state_dict(model.state_dict())
-                model = copy.deepcopy(model_dummy)
-
-                # Record loss
-                batch_loss.append(loss.item())
-
-            # Append loss, go to next epoch...
-            epoch_loss.append(sum(batch_loss) / len(batch_loss))
-
-        return model.state_dict(), sum(epoch_loss) / len(epoch_loss)
-
-    def participant_update_Alg2(self, model, global_round):
+    def participant_update_Alg2(self, model, norm_bound, noise_scale):
         # ALGORITHM 2 from: https://arxiv.org/pdf/2009.03561.pdf
 
 
@@ -307,6 +234,7 @@ class LocalUpdate(object):
 
         return model.state_dict(), del_norm
 
+    # RANDOM ATTACKS
     def poisoned_SGA(self, model, change=1):
         # Poisoned attack by doing gradient ASCENT
         # ALGORITHM 1 from: https://arxiv.org/pdf/1712.07557.pdf
@@ -361,9 +289,6 @@ class LocalUpdate(object):
         zeta_norm = zeta_norm ** (1. / 2)
 
         return model.state_dict(), zeta_norm
-
-
-
 
     def poisoned_ldp(self, model, norm_bound, noise_scale):
         # Set mode to train model
@@ -439,7 +364,7 @@ class LocalUpdate(object):
 
         return model.state_dict(), sum(epoch_loss) / len(epoch_loss)
 
-
+    # PIXEL ATTACKS
     def pixel_attack(self, model, epochs):
 
         # Set mode to train model
@@ -468,7 +393,7 @@ class LocalUpdate(object):
                 labels[to_change] *= 0  # label as 0
                 images[to_change, 0, 27, 27] = 2.80  # change bottom right pixel
                 #fig = plt.figure
-                #plt.imshow(images[0, 0], cmap='gray')
+                #plt.imshow(images[to_change[0], 0], cmap='gray')
                 #plt.show()
 
                 # Compute accumulated gradients of loss
@@ -574,7 +499,7 @@ class LocalUpdate(object):
 
         return model.state_dict(), sum(epoch_loss) / len(epoch_loss)
 
-
+    # 1 TO 7 ATTACKS
     def poisoned_1to7(self, model, change=1):
 
         # Set mode to train model

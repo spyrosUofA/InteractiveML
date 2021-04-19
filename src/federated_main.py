@@ -39,7 +39,6 @@ if __name__ == '__main__':
 
     testing_accuracy = [0]
 
-
     # BUILD MODEL
     if args.model == 'cnn':
         # Convolutional neural netork
