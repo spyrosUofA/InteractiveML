@@ -262,13 +262,13 @@ def central_DP_FL(norm_bound, noise_scale, seed=1):
             local_norms.append(copy.deepcopy(zeta))
 
         # norm bound (e.g. median of norms)
-        median_norms = norm_bound #np.median(local_norms)  #args.norm_bound
-        print(np.median(local_norms))
+        clip_factor = min(norm_bound, np.median(local_norms))
+        print(clip_factor)
 
         # clip weight updates
         for i in range(len(idxs_users)):
             for param in local_del_w[i].values():
-                param /= max(1, local_norms[i] / median_norms)
+                param /= max(1, local_norms[i] / clip_factor)
 
         # average the clipped weight updates
         average_del_w = average_weights(local_del_w)
@@ -277,7 +277,7 @@ def central_DP_FL(norm_bound, noise_scale, seed=1):
         # w_{t+1} = w_{t} + avg(del_w1 + del_w2 + ... + del_wc) + Noise
         for param, param_del_w in zip(global_weights.values(), average_del_w.values()):
             param += param_del_w
-            param += torch.randn(param.size()) * noise_scale * median_norms / len(idxs_users)
+            param += torch.randn(param.size()) * noise_scale * clip_factor / len(idxs_users)
         global_model.load_state_dict(global_weights)
 
         # test accuracy
@@ -288,24 +288,40 @@ def central_DP_FL(norm_bound, noise_scale, seed=1):
         print(testing_accuracy)
 
     # save test accuracy
-    np.savetxt('../save/NoAttacks/GDP_{}_{}_norm{}_scale{}_seed{}.txt'.
-                 format(args.dataset, args.model, norm_bound, noise_scale, s),
-               testing_accuracy)
+    #np.savetxt('../save/NoAttacks/GDP_{}_{}_norm{}_scale{}_seed{}.txt'.
+    #           format(args.dataset, args.model, norm_bound, noise_scale, s),
+    #           testing_accuracy)
 
 
 if __name__ == '__main__':
 
     # 5 runs of each
     for s in range(5):
-        # Non-Private
+        ## Non-Private ##
         #non_private_FL(seed=s)
 
-        ## Local DP
-        #local_DP_FL(norm_bound=3.2, noise_scale=0.5, seed=s)
-        #local_DP_FL(norm_bound=1.6, noise_scale=0.25, seed=s)
-        local_DP_FL(norm_bound=3.2, noise_scale=0.1, seed=s)
+        ## Local DP ##
+        #local_DP_FL(norm_bound=3.2, noise_scale=0.05, seed=s)
+        #local_DP_FL(norm_bound=1.6, noise_scale=0.05, seed=s)
 
-        ## Central DP
+        #local_DP_FL(norm_bound=3.2, noise_scale=0.1, seed=s)
+        #local_DP_FL(norm_bound=1.6, noise_scale=0.1, seed=s)
+
+        #local_DP_FL(norm_bound=3.2, noise_scale=0.15, seed=s)
+        #local_DP_FL(norm_bound=1.6, noise_scale=0.15, seed=s)
+
+        local_DP_FL(norm_bound=3.6, noise_scale=0.8, seed=s)
+
+        #local_DP_FL(norm_bound=1.6, noise_scale=0.25, seed=s)
+
+        ## Central DP ##
         #central_DP_FL(norm_bound=3.2, noise_scale=0.05, seed=s)
-        #central_DP_FL(norm_bound=2.2, noise_scale=0.1, seed=s)
-        #central_DP_FL(norm_bound=3.2, noise_scale=0.5, seed=s)
+        #central_DP_FL(norm_bound=1.6, noise_scale=0.05, seed=s)
+
+        #central_DP_FL(norm_bound=3.2, noise_scale=0.1, seed=s)
+        #central_DP_FL(norm_bound=1.6, noise_scale=0.1, seed=s)
+
+        #central_DP_FL(norm_bound=3.2, noise_scale=0.15, seed=s)
+        #central_DP_FL(norm_bound=1.6, noise_scale=0.15, seed=s)
+
+        central_DP_FL(norm_bound=1.6, noise_scale=0.25, seed=s)

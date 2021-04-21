@@ -22,8 +22,7 @@ import statistics
 import matplotlib.pyplot as plt
 
 
-def poisoned_NoDefense(seed=1):
-    start_time = time.time()
+def poisoned_NoDefense(nb_attackers, seed=1):
 
     # define paths
     path_project = os.path.abspath('..')
@@ -74,10 +73,9 @@ def poisoned_NoDefense(seed=1):
 
     # testing accuracy for global model
     testing_accuracy = [0.1]
-    backdoor_accuracy = [0.1]
 
     for epoch in tqdm(range(args.epochs)):
-        local_del_w, local_norms = [], []
+        local_del_w = []
         print(f'\n | Global Training Round : {epoch+1} |\n')
 
         global_model.train()
@@ -85,28 +83,18 @@ def poisoned_NoDefense(seed=1):
         idxs_users = np.random.choice(range(args.num_users), m, replace=False)
 
         # Adversary updates
-        print("Evil")
-        for idx in idxs_users[0:args.nb_attackers]:
-            print(idx)
-            local_model = LocalUpdate(args=args, dataset=train_dataset,
-                                      idxs=user_groups[idx], logger=logger)
-
-            del_w, zeta = local_model.poisoned_SGA(model=copy.deepcopy(global_model), change=1)
+        for idx in idxs_users[0:nb_attackers]:
+            print("evil")
+            local_model = LocalUpdate(args=args, dataset=train_dataset, idxs=user_groups[idx], logger=logger)
+            del_w, _ = local_model.poisoned_SGA(model=copy.deepcopy(global_model), epochs=30, change=1)
             local_del_w.append(copy.deepcopy(del_w))
-            local_norms.append(copy.deepcopy(zeta))
-            print(zeta)
 
         # Non-adversarial updates
-        print("Good")
-        for idx in idxs_users[args.nb_attackers:]:
-            print(idx)
-            local_model = LocalUpdate(args=args, dataset=train_dataset,
-                                      idxs=user_groups[idx], logger=logger)
-
-            del_w, zeta = local_model.update_weights(model=copy.deepcopy(global_model), change=1)
+        for idx in idxs_users[nb_attackers:]:
+            print("good")
+            local_model = LocalUpdate(args=args, dataset=train_dataset, idxs=user_groups[idx], logger=logger)
+            del_w, _ = local_model.update_weights(model=copy.deepcopy(global_model), change=1)
             local_del_w.append(copy.deepcopy(del_w))
-            local_norms.append(copy.deepcopy(zeta))
-            print(zeta)
 
         # average local updates
         average_del_w = average_weights(local_del_w)
@@ -124,10 +112,10 @@ def poisoned_NoDefense(seed=1):
         print(testing_accuracy)
 
     # save test accuracy
-    np.savetxt('../save/RandomAttack/NoDefense_{}_{}_seed{}.txt'.
-                 format(args.dataset, args.model, s), testing_accuracy)
+    np.savetxt('../save/RandomAttack/NoDefense_{}_{}_attackers{}_seed{}.txt'.
+                 format(args.dataset, args.model, nb_attackers, s), testing_accuracy)
 
-def poisoned_LDP(norm_bound, noise_scale, seed=1):
+def poisoned_LDP(nb_attackers, norm_bound, noise_scale, seed=1):
     start_time = time.time()
 
     # define paths
@@ -163,8 +151,7 @@ def poisoned_LDP(norm_bound, noise_scale, seed=1):
         len_in = 1
         for x in img_size:
             len_in *= x
-            global_model = MLP(dim_in=len_in, dim_hidden=64,
-                               dim_out=args.num_classes)
+            global_model = MLP(dim_in=len_in, dim_hidden=64, dim_out=args.num_classes)
     else:
         exit('Error: unrecognized model')
 
@@ -189,7 +176,7 @@ def poisoned_LDP(norm_bound, noise_scale, seed=1):
 
         # Adversary updates
         print("Evil")
-        for idx in idxs_users[0:args.nb_attackers]:
+        for idx in idxs_users[0:nb_attackers]:
             print(idx)
             local_model = LocalUpdate(args=args, dataset=train_dataset, idxs=user_groups[idx], logger=logger)
             w, _ = local_model.poisoned_ldp(model=copy.deepcopy(global_model), norm_bound=norm_bound, noise_scale=noise_scale)
@@ -197,7 +184,7 @@ def poisoned_LDP(norm_bound, noise_scale, seed=1):
 
         # Non-adversarial updates
         print("Good")
-        for idx in idxs_users[args.nb_attackers:]:
+        for idx in idxs_users[nb_attackers:]:
             print(idx)
             local_model = LocalUpdate(args=args, dataset=train_dataset, idxs=user_groups[idx], logger=logger)
             w, _ = local_model.dp_sgd(model=copy.deepcopy(global_model), norm_bound=norm_bound, noise_scale=noise_scale)
@@ -215,13 +202,10 @@ def poisoned_LDP(norm_bound, noise_scale, seed=1):
         print(testing_accuracy)
 
     # save accuracy
-    np.savetxt('../save/RandomAttack/LDP_FL_{}_{}_norm{}_scale{}_seed{}.txt'.
-                 format(args.dataset, args.model, norm_bound, noise_scale, s), testing_accuracy)
+    np.savetxt('../save/RandomAttack/LDP_FL_{}_{}_norm{}_scale{}_attackers{}_seed{}.txt'.
+               format(args.dataset, args.model, norm_bound, noise_scale, nb_attackers, s), testing_accuracy)
 
-def poisoned_CDP(norm_bound, noise_scale, seed=1):
-    # Central DP to protect against attackers
-
-    start_time = time.time()
+def poisoned_CDP(nb_attackers, norm_bound, noise_scale, seed=1):
 
     # define paths
     path_project = os.path.abspath('..')
@@ -272,7 +256,6 @@ def poisoned_CDP(norm_bound, noise_scale, seed=1):
 
     # testing accuracy for global model
     testing_accuracy = [0.1]
-    backdoor_accuracy = [0.1]
 
     for epoch in tqdm(range(args.epochs)):
         local_del_w, local_norms = [], []
@@ -282,29 +265,27 @@ def poisoned_CDP(norm_bound, noise_scale, seed=1):
         m = max(int(args.frac * args.num_users), 1)
         idxs_users = np.random.choice(range(args.num_users), m, replace=False)
 
-
         # Adversaries' update
-        for idx in idxs_users[0:args.nb_attackers]:
+        for idx in idxs_users[0:nb_attackers]:
             local_model = LocalUpdate(args=args, dataset=train_dataset, idxs=user_groups[idx], logger=logger)
-            del_w, zeta = local_model.poisoned_SGA(model=copy.deepcopy(global_model), change=1)
+            del_w, zeta = local_model.poisoned_SGA(model=copy.deepcopy(global_model), epochs=20, change=1)
             local_del_w.append(copy.deepcopy(del_w))
             local_norms.append(copy.deepcopy(zeta))
 
         # Non-adversary updates
-        for idx in idxs_users[args.nb_attackers:]:
+        for idx in idxs_users[nb_attackers:]:
             local_model = LocalUpdate(args=args, dataset=train_dataset, idxs=user_groups[idx], logger=logger)
             del_w, zeta = local_model.update_weights(model=copy.deepcopy(global_model), change=1)
             local_del_w.append(copy.deepcopy(del_w))
             local_norms.append(copy.deepcopy(zeta))
 
         # norm bound (e.g. median of norms)
-        median_norms = norm_bound #np.median(local_norms)  #args.norm_bound
-        print(median_norms)
+        clip_factor = min(np.median(local_norms), norm_bound)
 
         # clip weight updates
         for i in range(len(idxs_users)):
             for param in local_del_w[i].values():
-                param /= max(1, local_norms[i] / median_norms)
+                param /= max(1, local_norms[i] / clip_factor)
 
         # average the clipped weight updates
         average_del_w = average_weights(local_del_w)
@@ -313,7 +294,7 @@ def poisoned_CDP(norm_bound, noise_scale, seed=1):
         # w_{t+1} = w_{t} + avg(del_w1 + del_w2 + ... + del_wc) + Noise
         for param, param_del_w in zip(global_weights.values(), average_del_w.values()):
             param += param_del_w
-            param += torch.randn(param.size()) * noise_scale * median_norms / (len(idxs_users) ** 0.5)
+            param += torch.randn(param.size()) * noise_scale * clip_factor / len(idxs_users)
         global_model.load_state_dict(global_weights)
 
         # test accuracy
@@ -324,14 +305,14 @@ def poisoned_CDP(norm_bound, noise_scale, seed=1):
         print(testing_accuracy)
 
     # save test accuracy
-    np.savetxt('../save/RandomAttack/GDP_{}_{}_seed{}_clip{}_scale{}.txt'.
-                 format(args.dataset, args.model, s, args.norm_bound, args.noise_scale),
+    np.savetxt('../save/RandomAttack/GDP_{}_{}_clip{}_scale{}_attackers{}_seed{}.txt'.
+               format(args.dataset, args.model, norm_bound, noise_scale, nb_attackers, s),
                testing_accuracy)
 
 
 if __name__ == '__main__':
 
     for s in range(5):
-        #poisoned_random_NoDefense(seed=s)
-        #poisoned_random_CDP(norm_bound=3.2, noise_scale=0.04, seed=s)
-        poisoned_LDP(norm_bound=3.2, noise_scale=0.04, seed=s)
+        poisoned_NoDefense(nb_attackers=2, seed=s)
+        #poisoned_CDP(nb_attackers=2, norm_bound=2.2, noise_scale=0.1, seed=s)
+        #poisoned_LDP(nb_attackers=2, norm_bound=3.2, noise_scale=0.04, seed=s)

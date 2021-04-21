@@ -27,7 +27,7 @@ def args_parser():
                         help="number of users: K")
     parser.add_argument('--frac', type=float, default=0.1,
                         help='the fraction of clients: C')
-    parser.add_argument('--local_ep', type=int, default=5,
+    parser.add_argument('--local_ep', type=int, default=10,
                         help="the number of local epochs: E")
     parser.add_argument('--local_bs', type=int, default=20,
                         help="local batch size: B")
@@ -63,7 +63,7 @@ def args_parser():
                         to a specific GPU ID. Default set to use CPU.")
     parser.add_argument('--optimizer', type=str, default='sgd', help="type \
                         of optimizer")
-    parser.add_argument('--iid', type=int, default=0,
+    parser.add_argument('--iid', type=int, default=1,
                         help='Default set to IID. Set to 0 for non-IID.')
     parser.add_argument('--unequal', type=int, default=0,
                         help='whether to use unequal data splits for  \

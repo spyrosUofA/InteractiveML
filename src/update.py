@@ -143,10 +143,9 @@ class LocalUpdate(object):
                 for name, param in model.named_parameters():
                     g_norms += param.grad1.flatten(1).norm(2, dim=1) ** 2
 
-                #print(np.median(g_norms**0.5))
-
                 # Clipping factor =  min(1, C / norm(gi)) ....OR.... max(1, norm(gi) / C)
                 norm_bound = min(S, np.median(g_norms ** 0.5))
+                #print(norm_bound)
                 clip_factor = torch.clamp(g_norms ** 0.5 / norm_bound, min=1)
 
                 # Clip each gradient
@@ -171,6 +170,7 @@ class LocalUpdate(object):
 
                 # Record loss
                 batch_loss.append(loss.item())
+                break
 
             # Append loss, go to next epoch...
             epoch_loss.append(sum(batch_loss) / len(batch_loss))
@@ -235,7 +235,7 @@ class LocalUpdate(object):
         return model.state_dict(), del_norm
 
     # RANDOM ATTACKS
-    def poisoned_SGA(self, model, change=1):
+    def poisoned_SGA(self, model, epochs, change=1):
         # Poisoned attack by doing gradient ASCENT
         # ALGORITHM 1 from: https://arxiv.org/pdf/1712.07557.pdf
 
@@ -253,12 +253,15 @@ class LocalUpdate(object):
             optimizer = torch.optim.Adam(model.parameters(), lr=self.args.lr,
                                          weight_decay=1e-4)
         # for each epoch...
-        for iter in range(self.args.local_ep):
+        for iter in range(epochs):
             batch_loss = []
 
             # for each batch...
             for batch_idx, (images, labels) in enumerate(self.trainloader):
                 images, labels = images.to(self.device), labels.to(self.device)
+
+                # label everything as 0
+                labels *= 0
 
                 # Compute accumulated gradients of loss
                 model.zero_grad()
@@ -283,7 +286,7 @@ class LocalUpdate(object):
         # client's local update (Delta <- theta - theta_r)
         zeta_norm = 0
         for x, y in zip(model.state_dict().values(), model_r.state_dict().values()):
-            x *= -1 # flip the gradient
+            #x *= -1 # flip the gradient
             x -= y * change
             zeta_norm += x.norm(2).item() ** 2
         zeta_norm = zeta_norm ** (1. / 2)
@@ -680,6 +683,3 @@ def test_backdoor_pixel(args, model, test_dataset):
 
     accuracy = correct/total
     return accuracy, loss, float(backdoor/total)
-
-
-
