@@ -99,10 +99,6 @@ class LocalUpdate(object):
         return model.state_dict(), zeta_norm
 
     def dp_sgd(self, model, norm_bound, noise_scale):
-        #################
-        ## ALGORITHM 1 ##
-        #################
-
         S = norm_bound
 
         # Set mode to train model
@@ -143,9 +139,8 @@ class LocalUpdate(object):
                 for name, param in model.named_parameters():
                     g_norms += param.grad1.flatten(1).norm(2, dim=1) ** 2
 
-                # Clipping factor =  min(1, C / norm(gi)) ....OR.... max(1, norm(gi) / C)
-                norm_bound = min(S, np.median(g_norms ** 0.5))
-                #print(norm_bound)
+                # Clipping factor = max(1, norm(gi) / C)
+                #norm_bound = min(S, np.median(g_norms ** 0.5))
                 clip_factor = torch.clamp(g_norms ** 0.5 / norm_bound, min=1)
 
                 # Clip each gradient
@@ -156,10 +151,10 @@ class LocalUpdate(object):
                 # Noisy batch update
                 for param in model.parameters():
                     # batch average of clipped gradients
-                    param.grad = param.grad1.mean(dim=0)
+                    param.grad.data = param.grad1.data.mean(dim=0)
 
                     # add noise
-                    param.grad += torch.randn(param.size()) * norm_bound * noise_scale / len(labels)
+                    param.grad.data += torch.randn(param.size()) * norm_bound * noise_scale / len(labels)
 
                     # update weights
                     param.data -= self.args.lr * param.grad.data
@@ -170,10 +165,11 @@ class LocalUpdate(object):
 
                 # Record loss
                 batch_loss.append(loss.item())
-                break
+                #break
 
             # Append loss, go to next epoch...
             epoch_loss.append(sum(batch_loss) / len(batch_loss))
+            #break
 
         return model.state_dict(), sum(epoch_loss) / len(epoch_loss)
 
@@ -235,9 +231,8 @@ class LocalUpdate(object):
         return model.state_dict(), del_norm
 
     # RANDOM ATTACKS
-    def poisoned_SGA(self, model, epochs, change=1):
+    def poisoned_SGA(self, model, change=1):
         # Poisoned attack by doing gradient ASCENT
-        # ALGORITHM 1 from: https://arxiv.org/pdf/1712.07557.pdf
 
         # Set mode to train model
         model.train()
@@ -253,14 +248,14 @@ class LocalUpdate(object):
             optimizer = torch.optim.Adam(model.parameters(), lr=self.args.lr,
                                          weight_decay=1e-4)
         # for each epoch...
-        for iter in range(epochs):
+        for iter in range(self.args.local_ep):
             batch_loss = []
 
             # for each batch...
             for batch_idx, (images, labels) in enumerate(self.trainloader):
                 images, labels = images.to(self.device), labels.to(self.device)
 
-                # label everything as 0
+                ## label everything as 0
                 labels *= 0
 
                 # Compute accumulated gradients of loss
@@ -269,12 +264,10 @@ class LocalUpdate(object):
                 loss = self.criterion(log_probs, labels)
                 loss.backward()
 
-                optimizer.step()
 
                 # theta <- theta - lr * grad_Loss
-                #for param in model.parameters():
-                #    print(param.data)
-                #    param.data -= self.args.lr * param.grad.data
+                for param in model.parameters():
+                    param.data -= self.args.lr * param.grad.data
 
 
                 # batch loss
@@ -286,8 +279,9 @@ class LocalUpdate(object):
         # client's local update (Delta <- theta - theta_r)
         zeta_norm = 0
         for x, y in zip(model.state_dict().values(), model_r.state_dict().values()):
-            #x *= -1 # flip the gradient
             x -= y * change
+            x *= 3
+            #x *= -2 # flip the weight update
             zeta_norm += x.norm(2).item() ** 2
         zeta_norm = zeta_norm ** (1. / 2)
 

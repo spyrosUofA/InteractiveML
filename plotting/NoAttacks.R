@@ -87,6 +87,12 @@ legend("bottomright", c("Non-Private",
 dev.off()
 
 
+
+
+
+ldp_c1.6_s0.5 = 0.2*read.table("./save/NoAttacks/LDP_FL_mnist_cnn_norm1.6_scale0.5_seed0.txt", quote="\"")
+
+
 # LDP Plots
 jpeg("./plotting/NoAttack_ldp.jpg")
 plot(0:20, non_private$V1, xlab = "Communication Round", ylab = "Test Accuracy", ylim = c(0,1), type="l")
