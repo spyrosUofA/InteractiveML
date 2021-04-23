@@ -71,8 +71,9 @@ def poisoned_NoDefense(nb_attackers, seed=1):
     # copy weights
     global_weights = global_model.state_dict()
 
-    # dummy model
+    # backdoor model
     dummy_model = copy.deepcopy(global_model)
+    dummy_model.load_state_dict(torch.load('../save/all_5_model.pth'))
     dummy_norm = 0
     for x in dummy_model.state_dict().values():
         dummy_norm += x.norm(2).item() ** 2
@@ -89,24 +90,23 @@ def poisoned_NoDefense(nb_attackers, seed=1):
         m = max(int(args.frac * args.num_users), 1)
         idxs_users = np.random.choice(range(args.num_users), m, replace=False)
 
-        print(m)
-
         # Adversary updates
         for idx in idxs_users[0:nb_attackers]:
             print("evil")
             local_model = LocalUpdate(args=args, dataset=train_dataset, idxs=user_groups[idx], logger=logger)
-            del_w, _ = local_model.poisoned_SGA(model=copy.deepcopy(global_model), change=1)
+            #del_w, _ = local_model.poisoned_SGA(model=copy.deepcopy(global_model), change=1)
 
-            #w = copy.deepcopy(dummy_model)
+            w = copy.deepcopy(dummy_model)
             # compute change in parameters and norm
-            #zeta = 0
-            #for del_w, w_old in zip(w.parameters(), global_model.parameters()):
-            #    del_w.data = del_w.data - copy.deepcopy(w_old.data)
-            #    zeta += del_w.norm(2).item() ** 2
-            #zeta = zeta ** (1. / 2)
-            #del_w = w.state_dict()
+            zeta = 0
+            for del_w, w_old in zip(w.parameters(), global_model.parameters()):
+                del_w.data -= copy.deepcopy(w_old.data)
+                del_w.data *= m / nb_attackers
+                del_w.data += copy.deepcopy(w_old.data)
+                zeta += del_w.norm(2).item() ** 2
+            zeta = zeta ** (1. / 2)
+            del_w = copy.deepcopy(w.state_dict())
             local_del_w.append(copy.deepcopy(del_w))
-
 
 
         # Non-adversarial updates
@@ -274,6 +274,14 @@ def poisoned_CDP(nb_attackers, norm_bound, noise_scale, seed=1):
     # copy weights
     global_weights = global_model.state_dict()
 
+    # backdoor model
+    dummy_model = copy.deepcopy(global_model)
+    dummy_model.load_state_dict(torch.load('../save/all_5_model.pth'))
+    dummy_norm = 0
+    for x in dummy_model.state_dict().values():
+        dummy_norm += x.norm(2).item() ** 2
+    dummy_norm = dummy_norm ** (1. / 2)
+
     # testing accuracy for global model
     testing_accuracy = [0.1]
 
@@ -291,6 +299,20 @@ def poisoned_CDP(nb_attackers, norm_bound, noise_scale, seed=1):
             del_w, zeta = local_model.poisoned_SGA(model=copy.deepcopy(global_model), change=1)
             local_del_w.append(copy.deepcopy(del_w))
             local_norms.append(copy.deepcopy(zeta))
+
+            w = copy.deepcopy(dummy_model)
+            # compute change in parameters and norm
+            zeta = 0
+            for del_w, w_old in zip(w.parameters(), global_model.parameters()):
+                del_w.data -= copy.deepcopy(w_old.data)
+                del_w.data *= m / nb_attackers
+                del_w.data += copy.deepcopy(w_old.data)
+                zeta += del_w.norm(2).item() ** 2
+            zeta = zeta ** (1. / 2)
+            del_w = copy.deepcopy(w.state_dict())
+            local_del_w.append(copy.deepcopy(del_w))
+            local_norms.append(copy.deepcopy(zeta))
+
 
         # Non-adversary updates
         for idx in idxs_users[nb_attackers:]:
@@ -338,7 +360,7 @@ if __name__ == '__main__':
     for s in range(5):
         print(s)
         #poisoned_NoDefense(nb_attackers=nb_attackers, seed=s)
-        poisoned_CDP(nb_attackers=nb_attackers, norm_bound=3.2, noise_scale=0.3, seed=s)
+        poisoned_CDP(nb_attackers=nb_attackers, norm_bound=1.6, noise_scale=0.3, seed=s)
         #poisoned_LDP(nb_attackers=nb_attackers, norm_bound=5.0, noise_scale=0.3, seed=s)
 
 

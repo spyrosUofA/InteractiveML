@@ -280,8 +280,7 @@ class LocalUpdate(object):
         zeta_norm = 0
         for x, y in zip(model.state_dict().values(), model_r.state_dict().values()):
             x -= y * change
-            x *= 3
-            #x *= -2 # flip the weight update
+            x *= 10 #-1 # flip the weight update
             zeta_norm += x.norm(2).item() ** 2
         zeta_norm = zeta_norm ** (1. / 2)
 
@@ -341,10 +340,10 @@ class LocalUpdate(object):
                 # Noisy batch update
                 for param in model.parameters():
                     # batch average of clipped gradients
-                    param.grad = param.grad1.mean(dim=0)
+                    param.grad.data = param.grad1.mean(dim=0)
 
                     # add noise
-                    param.grad += torch.randn(param.size()) * norm_bound * noise_scale / len(labels)
+                    param.grad.data += torch.randn(param.size()) * norm_bound * noise_scale / len(labels)
 
                     # update weights
                     param.data -= self.args.lr * param.grad.data

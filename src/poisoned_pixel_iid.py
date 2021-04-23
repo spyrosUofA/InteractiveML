@@ -388,4 +388,4 @@ if __name__ == '__main__':
         #poisoned_pixel_CDP(norm_bound=1.6, noise_scale=0.3, nb_attackers=nb_attackers, seed=s)
         #poisoned_pixel_CDP(norm_bound=3.2, noise_scale=0.3, nb_attackers=nb_attackers, seed=s)
 
-        poisoned_pixel_CDP(norm_bound=8, noise_scale=0.05, nb_attackers=nb_attackers, seed=s)
+        poisoned_pixel_CDP(norm_bound=8, noise_scale=0.15, nb_attackers=nb_attackers, seed=s)

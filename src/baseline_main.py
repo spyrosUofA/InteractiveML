@@ -68,23 +68,20 @@ if __name__ == '__main__':
         for batch_idx, (images, labels) in enumerate(trainloader):
             images, labels = images.to(device), labels.to(device)
 
-
+            #poison
+            labels *= 0
+            labels += 5
 
             optimizer.zero_grad()
             outputs = global_model(images)
             loss = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
+            break
 
-            if batch_idx % 50 == 0:
-                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                    epoch+1, batch_idx * len(images), len(trainloader.dataset),
-                    100. * batch_idx / len(trainloader), loss.item()))
-            batch_loss.append(loss.item())
 
-        loss_avg = sum(batch_loss)/len(batch_loss)
-        print('\nTrain loss:', loss_avg)
-        epoch_loss.append(loss_avg)
+
+    torch.save(global_model.state_dict(), '../save/all_5_model.pth')
 
     # Plot loss
     plt.figure()
